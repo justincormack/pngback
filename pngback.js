@@ -69,37 +69,6 @@ function VBuf(obj) {
 	};
 }
 
-
-// state machine. set as listener for (data) events and emits new ones if some conditions match
-// the passed function is called on any input events and should return:
-// a new function if it could still succeed
-// or an array, the first item of which is the event name, this stops listening as state no longer active.
-// or a standard event if it has failed eg noMatch or error.
-
-// now obsolete. See FSM below that does not do state transition events.
-function State() {
-	events.EventEmitter.call(this);
-	this.super_ = events.EventEmitter;
-	this.listeners = [];
-	this.listen = function(emitter, ev, fn) {
-		var e = {'emitter': emitter, 'ev':ev, 'fn':fn};
-		emitter.once(ev, function() {
-			var ret = fn.apply(arguments);
-			if (typeof ret == 'function') {
-				var nm = new Match(ret);
-				nm.listen(emitter, ev);
-			} else {
-				while (this.listeners.length) {
-					var e = this.listeners.pop();
-					e.emitter.removeListener(e.ev, e.fn);
-				}
-				this.emit.apply(ret);
-			}
-		});
-		this.listeners.push(e);
-	};
-}
-
 // oops we want to keep a set of transition events that get passed along.
 // we dont actually need to emit an event for the state, unless it wants to (have an entry hook).
 // have a nice set of hooks, entry, exit, input, transition (?)
