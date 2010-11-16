@@ -75,7 +75,6 @@ function VBuf(obj) {
 
 function FSM(start) {
 	var fsm = this;
-	var state;
 	this.state = start;
 	this.listeners = [];
 	this.listen = function(emitter, ev) {
