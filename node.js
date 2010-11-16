@@ -4,7 +4,11 @@
 
 var png = require('./pngback');
 
-process.argv.forEach(function (val, index, array) {
-  console.log(index + ': ' + val);
+var fs = require('fs');
+
+process.argv.forEach(function(val, index, array) {
+	if (index > 1) {
+		png.info(fs.ReadStream(val));
+	}
 });
 
