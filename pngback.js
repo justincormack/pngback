@@ -84,14 +84,13 @@ function FSM(start) {
 				fsm.state = fsm.state.apply(Array.prototype.slice.apply(arguments).unshift(emitter, ev));
 			} else {
 				while (fsm.listeners.length) {
-					e = fsm.listeners.pop();
+					var e = fsm.listeners.pop();
 					e.emitter.removeListener(e.ev, e.f);
 				}	
 			}
 		};
-		var e = {'emitter': emitter, 'ev':ev, 'f':f};
-		this.listeners.push(e);
-		e.emitter.on(e.ev, f);
+		this.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
+		emitter.on(ev, f);
 	};
 
 	this.unlisten = function(emitter, ev) {
