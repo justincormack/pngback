@@ -6,7 +6,7 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
 // data object for node buffers, a vector of buffers
 
-// should I use prototype not anon fns? performance.
+// should I use prototype not anon fns? work out ehat we need to override for non node env
 
 function VBuf(obj) {
 	if (typeof obj == 'object') {
@@ -118,7 +118,7 @@ function start() {
 function t1() {
 	console.log('1');
 	return t2;
-};
+}
 
 function t2() {
 	console.log('2');
