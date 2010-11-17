@@ -64,7 +64,7 @@ VBuf.prototype.open = function(stream) {
 	
 VBuf.prototype.eat = function(len) {
 	if (len === 0) {return;}
-	if (len > this.length) {throw "Trying to eat too much!";}
+	if (len > this.length) {len = this.length;}
 	this.offset += len;
 	this.length -= len;
 	while (this.offset >= this.buffers[0].length) {
