@@ -94,41 +94,43 @@ VBuf.prototype.byte = function(offset) {
 // pass to listen the emitter and event and a function that is called with the event data, the return values are sent to state
 
 function FSM(start) {
-	var fsm = this;
 	this.state = start;
 	this.listeners = [];
-	this.listen = function(emitter, ev, ef, scope) {
-		var f = function(arg) {
-			if (typeof(fsm.state) == 'function') {
-				if (typeof ef == 'function') {
-					fsm.state = fsm.state.apply(this, ef.apply(scope, Array.prototype.slice.call(arguments)));
-				} else {
-					fsm.state = fsm.state();
-				}
-			} else {
-				while (fsm.listeners.length) {
-					var e = fsm.listeners.pop();
-					if (typeof e == 'object') {
-						e.emitter.removeListener(e.ev, e.f);
-					}
-				}	
-			}
-		};
-		fsm.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
-		emitter.on(ev, f);
-	};
-
-	this.unlisten = function(emitter, ev) {
-		for (var i = 0; i < fsm.listeners.length; i++) {
-			var e = fsm.listeners[i];
-			if (e.emitter === emitter && e.ev === ev) {
-				e.emitter.removeListener(e.ev, e.f);
-				delete fsm.listeners[i];
-				return;
-			}
-		}	
-	};
 }
+
+FSM.prototype.listen = function(emitter, ev, ef, scope) {
+	var fsm = this;
+	var f = function(arg) {
+		if (typeof(fsm.state) == 'function') {
+			if (typeof ef == 'function') {
+				fsm.state = fsm.state.apply(this, ef.apply(scope, Array.prototype.slice.call(arguments)));
+			} else {
+				fsm.state = fsm.state();
+			}
+		} else { // did not return a function so we are done
+			while (fsm.listeners.length) {
+				var e = fsm.listeners.pop();
+				if (typeof e == 'object') {
+					e.emitter.removeListener(e.ev, e.f);
+				}
+			}	
+		}
+	};
+	this.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
+	emitter.on(ev, f);
+};
+
+FSM.prototype.unlisten = function(emitter, ev) {
+	for (var i = 0; i < this.listeners.length; i++) {
+		var e = this.listeners[i];
+		if (e.emitter === emitter && e.ev === ev) {
+			e.emitter.removeListener(e.ev, e.f);
+			delete this.listeners[i];
+			return;
+		}
+	}	
+};
+
 
 
 // quick example. Initial state is start, events called 'tick', goes to t1, t2, t3, stop
