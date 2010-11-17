@@ -6,7 +6,6 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
 // data object for node buffers, a vector of buffers
 
-// should I use prototype not anon fns? work out what we need to override for non node env
 // we need to be able to override VBuf to basically add state, unless we use a helper
 // helper could be better, as we need to replace the whole thing if not using node
 
@@ -131,96 +130,13 @@ FSM.prototype.unlisten = function(emitter, ev) {
 	}	
 };
 
-
-
-// quick example. Initial state is start, events called 'tick', goes to t1, t2, t3, stop
-var start, t1, t2, t3, t4, stop;
-
-function start() {
-	console.log('start');
-	return t1;
-}
-
-function t1() {
-	console.log('1');
-	return t2;
-}
-
-function t2() {
-	console.log('2');
-	return t3;
-}
-function t3() {
-	console.log('3');
-	return t4;
-}
-function t4() {
-	console.log('4');
-	return stop;
-}
-function stop() {
-	console.log('stop');
-	return;
-}
-
-function Ticker(ev, n) {
-	events.EventEmitter.call(this);
-}
-
-Ticker.super_ = events.EventEmitter;
-
-Ticker.prototype = Object.create(events.EventEmitter.prototype, {
-    constructor: {
-        value: Ticker,
-        enumerable: false
-    }
-});
-
-Ticker.prototype.run = function(ev, n) {
-	for (var i = 0; i < n; i++) {
-		this.emit(ev);
-	}		
-};
-
-function test() {
-	var fsm = new FSM(start);
-	var ticker = new Ticker();
-	fsm.listen(ticker, 'tick');
-	ticker.run('tick', 10);
-}
-
-var vs;
-
-function vs(bytes) {
-	console.log('received ' + bytes);
-	
-	if (bytes === 0) {
-		return;
-	}
-	return vs;
-}
-
-function vtest(stream) {
-	// some info from our stream
-	// uses vbuf directly without helper
-
-	var fsm = new FSM(vs);
-	var vb = new VBuf();
-	vb.listen(fsm, stream);
-	
-}
-
-
-
-(function( exports ) {
+(function(exports) {
 	// All library code
-	exports.vtest = vtest;
-	exports.test = test;
+	exports.FSM = FSM;
+	exports.VBuf = VBuf;
 })(
 
   typeof exports === 'object' ? exports : this
 );
-
-
 
 
