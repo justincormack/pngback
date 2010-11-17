@@ -6,64 +6,82 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
 // data object for node buffers, a vector of buffers
 
-// should I use prototype not anon fns? work out ehat we need to override for non node env
+// should I use prototype not anon fns? work out what we need to override for non node env
+// we need to be able to override VBuf to basically add state, unless we use a helper
+// helper could be better, as we need to replace the whole thing if not using node
 
 function VBuf(obj) {
+	var vb = this;
+	
 	if (typeof obj == 'object') {
 		this.offset = obj.offset;
 		this.length = obj.length;
 		this.buffers = slice(obj.buffers);
-		this.end = obj.end;
+		this.ended = obj.ended;
+		this.total = obj.total;
 	} else {
 		this.offset = 0;
 		this.length = 0;
 		this.buffers = [];
-		this.end = false;
+		this.ended = false;
+		this.total = 0;
 	}
 	
-	this.append = function(buf) {
-		if (! this.end) {
-			this.buffers.push(buf);
-			this.length += buf.length;
+	this.data = function(buf) {
+		console.log("data " + buf.length);
+		if (! vb.ended) {
+			vb.buffers.push(buf);
+			vb.length += buf.length;
+			vb.total += buf.length;
+			return [buf.length];
 		}
 	};
+	
+	this.end = function() {
+		console.log("end");
+		vb.ended = true;
+		return [0];
+	};
+	
+	this.listen = function(fsm, stream) {
+		fsm.listen(stream, 'data', vb.data);
+		fsm.listen(stream, 'end', vb.end);
+	};
+	
 	this.eat = function(len) {
 		if (len === 0) {return;}
-		if (len > this.length) {throw "Trying to eat too much!";}
-		this.offset += len;
-		this.length -= len;
-		while (this.offset >= this.buffers[0].length) {
-			this.offset -= this.buffers[0].length;
-			this.buffers.shift();
+		if (len > vb.length) {throw "Trying to eat too much!";}
+		vb.offset += len;
+		vb.length -= len;
+		while (vb.offset >= vb.buffers[0].length) {
+			vb.offset -= vb.buffers[0].length;
+			vb.buffers.shift();
 		}
-	};
-	this.end = function() {
-		this.end = true;
 	};
 	this.truncate = function(len) {
 		// truncate this vbuf
-		if (len > this.length) {len = this.length;}
-		this.end();
-		var drop = this.length - len;
-		this.length = len;
-		while (this.buffers[this.buffers.length - 1].length >= drop) {
-			drop -= this.buffers[this.buffers.length - 1].length;
-			this.buffers.pop();
+		if (len > vb.length) {len = vb.length;}
+		vb.ended = true;
+		var drop = vb.length - len;
+		vb.length = len;
+		while (vb.buffers[vb.buffers.length - 1].length >= drop) {
+			drop -= vb.buffers[vb.buffers.length - 1].length;
+			vb.buffers.pop();
 		}
 	};
 	this.ref = function(len) {
 		// return a truncated vbuf object, can be used to store a reference to the front of stream
-		var vb = new VBuf(this);
-		vb.truncate(len);
-		return vb;
+		var trunc = new VBuf(vb);
+		trunc.truncate(len);
+		return trunc;
 	};
 	this.byte = function(offset) {
-		offset += this.offset;
-		for (var i = 0; i < this.buffers.length; i++) {
-			if (this.buffers[i].length > offset) {
-				return this.buffers[i][offset];
+		offset += vb.offset;
+		for (var i = 0; i < vb.buffers.length; i++) {
+			if (vb.buffers[i].length > offset) {
+				return vb.buffers[i][offset];
 			} else {
-				offset -= this.buffers[i].length;
+				offset -= vb.buffers[i].length;
 			}
 		}
 	};
@@ -72,15 +90,20 @@ function VBuf(obj) {
 // oops we want to keep a set of transition events that get passed along.
 // we dont actually need to emit an event for the state, unless it wants to (have an entry hook).
 // have a nice set of hooks, entry, exit, input, transition (?)
+// pass to listen the emitter and event and a function that is called with the event data, the return values are sent to state
 
 function FSM(start) {
 	var fsm = this;
 	this.state = start;
 	this.listeners = [];
-	this.listen = function(emitter, ev) {
-		var f = function() {
+	this.listen = function(emitter, ev, ef) {
+		var f = function(arg) {
 			if (typeof(fsm.state) == 'function') {
-				fsm.state = fsm.state.apply(Array.prototype.slice.apply(arguments).unshift(emitter, ev));
+				if (typeof ef == 'function') {
+					fsm.state = fsm.state.apply(this, ef.apply(null, Array.prototype.slice.call(arguments)));
+				} else {
+					fsm.state = fsm.state();
+				}
 			} else {
 				while (fsm.listeners.length) {
 					var e = fsm.listeners.pop();
@@ -88,16 +111,16 @@ function FSM(start) {
 				}	
 			}
 		};
-		this.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
+		fsm.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
 		emitter.on(ev, f);
 	};
 
 	this.unlisten = function(emitter, ev) {
-		for (var i = 0; i < this.listeners.length; i++) {
-			var e = this.listeners[i];
+		for (var i = 0; i < fsm.listeners.length; i++) {
+			var e = fsm.listeners[i];
 			if (e.emitter === emitter && e.ev === ev) {
 				e.emitter.removeListener(e.ev, e.f);
-				delete this.listeners[i];
+				delete fsm.listeners[i];
 				return;
 			}
 		}	
@@ -161,19 +184,24 @@ function test() {
 	ticker.run('tick', 10);
 }
 
+var vs;
 
-
-
-
-
-function info(st) {
-	// some info from our stream
-	//state={};
-	vb = new VBuf();
+function vs(bytes) {
+	console.log('received ' + bytes);
 	
-	st.addListener('data', vb.append).
-	   addListener('end', vb.end).
-	   addListener('err', function err(exception) {throw exception;});
+	if (bytes === 0) {
+		return;
+	}
+	return vs;
+}
+
+function vtest(stream) {
+	// some info from our stream
+	// uses vbuf directly without helper
+
+	var fsm = new FSM(vs);
+	var vb = new VBuf();
+	vb.listen(fsm, stream);
 	
 }
 
@@ -181,7 +209,7 @@ function info(st) {
 
 (function( exports ) {
 	// All library code
-	exports.info = info;
+	exports.vtest = vtest;
 	exports.test = test;
 })(
 
