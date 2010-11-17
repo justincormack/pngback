@@ -79,6 +79,8 @@ VBuf.prototype.bytes = function(len) {
 
 // StreamBuffer handles the events and streams, creates VBuf to store data
 
+// less clear where we should handle error events etc. also if we should get a stream creation fn and manage the stream ourselves
+// also end event could be handled here
 function StreamBuffer(stream) {
 	var vb = new VBuf();
 	var sb = this;
@@ -87,8 +89,14 @@ function StreamBuffer(stream) {
 	
 	this.stream = stream;
 	
-	stream.on('data', function() {vb.data.apply(vb, Array.prototype.slice.call(arguments)); sb.emit('buffer', vb);});
-	stream.on('end', function() {vb.end.apply(vb, Array.prototype.slice.call(arguments)); sb.emit('buffer', vb);});
+	stream.on('data', function() {
+		vb.data.apply(vb, Array.prototype.slice.call(arguments));
+		sb.emit('buffer', vb);
+		});
+	stream.on('end', function() {
+		vb.end.apply(vb, Array.prototype.slice.call(arguments));
+		sb.emit('buffer', vb);
+		});
 }
 
 StreamBuffer.super_ = events.EventEmitter;
@@ -103,11 +111,13 @@ StreamBuffer.prototype = Object.create(events.EventEmitter.prototype, {
 // oops we want to keep a set of transition events that get passed along.
 // we dont actually need to emit an event for the state, unless it wants to (have an entry hook).
 // have a nice set of hooks, entry, exit, input, transition (?)
-// pass to listen the emitter and event and a function that is called with the event data, the return values are sent to state
+// pass to listen the emitter and event
+// aha, we want an emitter for each fsm, which the functions get passed
 
 function FSM(start) {
 	this.state = start;
 	this.listeners = [];
+	this.emitter = new events.EventEmitter();
 }
 
 FSM.prototype.listen = function(emitter, ev) {
@@ -138,6 +148,8 @@ FSM.prototype.unlisten = function(emitter, ev) {
 		}
 	}	
 };
+
+
 
 
 (function(exports) {

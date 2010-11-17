@@ -59,7 +59,7 @@ function test1() {
 	ticker.run('tick', 10);
 }
 
-var emitter = new events.EventEmitter();
+//var emitter = new events.EventEmitter();
 
 var vs;
 
@@ -67,7 +67,7 @@ function vs(vb) {
 	console.log("vs received data");
 	
 	if (vb.ended) {
-		emitter.emit('end', vb.total);
+		this.emitter.emit('end', vb.total);
 		return;
 	}
 	return vs;
@@ -82,10 +82,11 @@ function test2(stream) {
 	// uses vbuf directly without helper
 
 
-	emitter.on('end', endlisten);
+
 	
-	var fsm = new png.FSM(vs);
 	var sb = new png.StreamBuffer(stream);
+	var fsm = new png.FSM(vs);
+	fsm.emitter.on('end', endlisten);
 	fsm.listen(sb, 'buffer');
 	
 	
