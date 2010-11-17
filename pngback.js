@@ -75,16 +75,20 @@ VBuf.prototype.ref = function(len) {
 	return trunc;
 };
 
-// not sure we should allow reading not from front?
-VBuf.prototype.byte = function(offset) {
-	offset += this.offset;
-	for (var i = 0; i < this.buffers.length; i++) {
-		if (this.buffers[i].length > offset) {
-			return this.buffers[i][offset];
-		} else {
-			offset -= this.buffers[i].length;
+// not sure we should allow reading not from front? prob return array of given len from front using push
+VBuf.prototype.bytes = function(len) {
+	var offset = this.offset;
+	var bytes = [];
+	var buf = 0;
+	if (len > this.length) {len = this.length;}
+	for (var i = 0; i < len; i++) {
+		while (this.buffers[buf].length <= offset) {
+			offset = 0;
+			buf++;
 		}
+		bytes.push(this.buffers[buf][offset]);
 	}
+	return bytes;
 };
 
 // oops we want to keep a set of transition events that get passed along.
@@ -131,7 +135,6 @@ FSM.prototype.unlisten = function(emitter, ev) {
 };
 
 (function(exports) {
-	// All library code
 	exports.FSM = FSM;
 	exports.VBuf = VBuf;
 })(
