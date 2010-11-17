@@ -118,15 +118,11 @@ function FSM(start) {
 	this.listeners = [];
 }
 
-FSM.prototype.listen = function(emitter, ev, ef, scope) {
+FSM.prototype.listen = function(emitter, ev) {
 	var fsm = this;
 	var f = function() {
 		if (typeof(fsm.state) == 'function') {
-			if (typeof ef == 'function') {
-				fsm.state = fsm.state.apply(fsm, ef.apply(scope, Array.prototype.slice.call(arguments)));
-			} else {
-				fsm.state = fsm.state.apply(fsm, Array.prototype.slice.call(arguments));
-			}
+			fsm.state = fsm.state.apply(fsm, Array.prototype.slice.call(arguments));
 		} else { // did not return a function so we are done
 			while (fsm.listeners.length) {
 				var e = fsm.listeners.pop();
