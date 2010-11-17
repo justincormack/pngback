@@ -84,7 +84,9 @@ function test2(stream) {
 
 	emitter.on('end', endlisten);
 	
-	var fsm = new png.StreamFSM(stream, vs);
+	var fsm = new png.FSM(start);
+	var vb = new png.VBuf(stream);
+	fsm.listen(vb, 'buffer');
 	
 	
 }

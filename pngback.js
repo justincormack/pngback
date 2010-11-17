@@ -140,18 +140,10 @@ FSM.prototype.unlisten = function(emitter, ev) {
 	}	
 };
 
-// convenience function for stream setup
-function StreamFSM(stream, start) {
-	var fsm = new FSM(start);
-	var vb = new VBuf(stream);
-	fsm.listen(vb, 'buffer');
-}
-
 
 (function(exports) {
 	exports.FSM = FSM;
 	exports.VBuf = VBuf;
-	exports.StreamFSM = StreamFSM;
 })(
 
   typeof exports === 'object' ? exports : this
