@@ -67,7 +67,7 @@ function vs(vb) {
 	console.log("vs received data");
 	
 	if (vb.ended) {
-		this.emitter.emit('end', vb.total);
+		this.emit('end', vb.total);
 		return;
 	}
 	return vs;
@@ -86,7 +86,7 @@ function test2(stream) {
 	
 	var sb = new png.StreamBuffer(stream);
 	var fsm = new png.FSM(vs);
-	fsm.emitter.on('end', endlisten);
+	fsm.on('end', endlisten);
 	fsm.listen(sb, 'buffer');
 	
 	

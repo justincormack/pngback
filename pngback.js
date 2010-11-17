@@ -115,10 +115,19 @@ StreamBuffer.prototype = Object.create(events.EventEmitter.prototype, {
 // aha, we want an emitter for each fsm, which the functions get passed
 
 function FSM(start) {
+	events.EventEmitter.call(this);
 	this.state = start;
 	this.listeners = [];
-	this.emitter = new events.EventEmitter();
 }
+
+FSM.super_ = events.EventEmitter;
+
+FSM.prototype = Object.create(events.EventEmitter.prototype, {
+    constructor: {
+        value: FSM,
+        enumerable: false
+    }
+});
 
 FSM.prototype.listen = function(emitter, ev) {
 	var fsm = this;
