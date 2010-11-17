@@ -59,8 +59,6 @@ function test1() {
 	ticker.run('tick', 10);
 }
 
-//var emitter = new events.EventEmitter();
-
 var vs;
 
 function vs(vb) {
@@ -80,9 +78,6 @@ function endlisten(size) {
 function test2(stream) {
 	// some info from our stream
 	// uses vbuf directly without helper
-
-
-
 	
 	var sb = new png.StreamBuffer(stream);
 	var fsm = new png.FSM(vs);

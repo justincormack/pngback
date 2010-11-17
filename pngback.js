@@ -108,11 +108,9 @@ StreamBuffer.prototype = Object.create(events.EventEmitter.prototype, {
     }
 });
 
+// FSM. receives events and has an emitter for the state functions to use.
 // oops we want to keep a set of transition events that get passed along.
-// we dont actually need to emit an event for the state, unless it wants to (have an entry hook).
-// have a nice set of hooks, entry, exit, input, transition (?)
-// pass to listen the emitter and event
-// aha, we want an emitter for each fsm, which the functions get passed
+// aha, we want an emitter for each fsm, which the functions get to use
 
 function FSM(start) {
 	events.EventEmitter.call(this);
@@ -129,12 +127,14 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
     }
 });
 
+// maybe restore the passed function. now if listen to multiple events cannot distinguish
+// see if adding ev ok for now? seems to cause issues on apply. hmm annoying
+// is this the best way of ending? Maybe somewhere else should be removing fsm on event?
 FSM.prototype.listen = function(emitter, ev) {
 	var fsm = this;
 	var f = function() {
-		if (typeof(fsm.state) == 'function') {
-			fsm.state = fsm.state.apply(fsm, Array.prototype.slice.call(arguments));
-		} else { // did not return a function so we are done
+		fsm.state = fsm.state.apply(fsm, Array.prototype.slice.call(arguments));
+ 		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
 			while (fsm.listeners.length) {
 				var e = fsm.listeners.pop();
 				if (typeof e == 'object') {
@@ -158,6 +158,27 @@ FSM.prototype.unlisten = function(emitter, ev) {
 	}	
 };
 
+
+// Functions to match against stream
+// pass success and fail values, normally functions for state change but could be values for composition
+function Match(success, fail, items) {
+	var f;
+	f = function(vb) {
+		if (vb.ended && vb.length < items.length) { // cannot match as not enough data
+			return fail;
+		}
+		if (vb.length === 0) { // nothing to check, try again later
+			return f;
+		}
+		var canmatch = (items.length > vb.length) ? vb.length : items.length;
+		for (var i = 0; i < canmatch; i++) {
+			
+		}
+		
+		
+	}
+	return f;
+}
 
 
 
