@@ -6,35 +6,13 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
 // data object for node buffers, a vector of buffers
 
-// acts as a reciever of stream events and emits 'buffer' events with itself as an argument
-
-function VBuf(stream) {
-	var vb = this;
-	
-	events.EventEmitter.call(this);
-	
+function VBuf() {
 	this.offset = 0;
 	this.length = 0;
 	this.buffers = [];
-	this.ended = false;
 	this.total = 0;
-
-	stream.on('data', function() {vb.data.apply(vb, Array.prototype.slice.call(arguments));});
-	stream.on('end', function() {vb.end.apply(vb, Array.prototype.slice.call(arguments));});
+	this.ended = false;
 }
-
-VBuf.super_ = events.EventEmitter;
-
-VBuf.prototype = Object.create(events.EventEmitter.prototype, {
-    constructor: {
-        value: VBuf,
-        enumerable: false
-    }
-});
-
-VBuf.prototype.emitEvent = function(n) {
-	this.emit('buffer', n, this);
-};
 
 VBuf.prototype.data = function(buf) {
 	console.log("data " + buf.length);
@@ -42,13 +20,11 @@ VBuf.prototype.data = function(buf) {
 	this.buffers.push(buf);
 	this.length += buf.length;
 	this.total += buf.length;
-	this.emitEvent(buf.length);
 };
 	
 VBuf.prototype.end = function() {
 	console.log("end");
 	this.ended = true;
-	this.emitEvent(0);
 };
 	
 VBuf.prototype.eat = function(len) {
@@ -65,9 +41,9 @@ VBuf.prototype.eat = function(len) {
 VBuf.prototype.truncate = function(len) {
 	// truncate this vbuf
 	if (len > this.length) {len = this.length;}
-	this.ended = true;
 	var drop = this.length - len;
 	this.length = len;
+	this.ended = true;
 	while (this.buffers[this.buffers.length - 1].length >= drop) {
 		drop -= this.buffers[this.buffers.length - 1].length;
 		this.buffers.pop();
@@ -100,6 +76,29 @@ VBuf.prototype.bytes = function(len) {
 	}
 	return bytes;
 };
+
+// StreamBuffer handles the events and streams, creates VBuf to store data
+
+function StreamBuffer(stream) {
+	var vb = new VBuf();
+	var sb = this;
+	
+	events.EventEmitter.call(this);
+	
+	this.stream = stream;
+	
+	stream.on('data', function() {vb.data.apply(vb, Array.prototype.slice.call(arguments)); sb.emit('buffer', vb);});
+	stream.on('end', function() {vb.end.apply(vb, Array.prototype.slice.call(arguments)); sb.emit('buffer', vb);});
+}
+
+StreamBuffer.super_ = events.EventEmitter;
+
+StreamBuffer.prototype = Object.create(events.EventEmitter.prototype, {
+    constructor: {
+        value: StreamBuffer,
+        enumerable: false
+    }
+});
 
 // oops we want to keep a set of transition events that get passed along.
 // we dont actually need to emit an event for the state, unless it wants to (have an entry hook).
@@ -144,6 +143,7 @@ FSM.prototype.unlisten = function(emitter, ev) {
 (function(exports) {
 	exports.FSM = FSM;
 	exports.VBuf = VBuf;
+	exports.StreamBuffer = StreamBuffer;
 })(
 
   typeof exports === 'object' ? exports : this

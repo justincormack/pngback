@@ -63,8 +63,8 @@ var emitter = new events.EventEmitter();
 
 var vs;
 
-function vs(bytes, vb) {
-	console.log('received ' + bytes);
+function vs(vb) {
+	console.log("vs received data");
 	
 	if (vb.ended) {
 		emitter.emit('end', vb.total);
@@ -84,9 +84,9 @@ function test2(stream) {
 
 	emitter.on('end', endlisten);
 	
-	var fsm = new png.FSM(start);
-	var vb = new png.VBuf(stream);
-	fsm.listen(vb, 'buffer');
+	var fsm = new png.FSM(vs);
+	var sb = new png.StreamBuffer(stream);
+	fsm.listen(sb, 'buffer');
 	
 	
 }
