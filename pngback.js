@@ -8,22 +8,19 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
 // acts as a reciever of stream events and emits 'buffer' events with itself as an argument
 
-function VBuf(obj) {
+function VBuf(stream) {
+	var vb = this;
+	
 	events.EventEmitter.call(this);
 	
-	if (typeof obj == 'object') {
-		this.offset = obj.offset;
-		this.length = obj.length;
-		this.buffers = slice(obj.buffers);
-		this.ended = obj.ended;
-		this.total = obj.total;
-	} else {
-		this.offset = 0;
-		this.length = 0;
-		this.buffers = [];
-		this.ended = false;
-		this.total = 0;
-	}
+	this.offset = 0;
+	this.length = 0;
+	this.buffers = [];
+	this.ended = false;
+	this.total = 0;
+
+	stream.on('data', function() {vb.data.apply(vb, Array.prototype.slice.call(arguments));});
+	stream.on('end', function() {vb.end.apply(vb, Array.prototype.slice.call(arguments));});
 }
 
 VBuf.super_ = events.EventEmitter;
@@ -53,14 +50,6 @@ VBuf.prototype.end = function() {
 	this.ended = true;
 	this.emitEvent(0);
 };
-
-
-VBuf.prototype.open = function(stream) {
-	var vb = this;
-
-	stream.on('data', function() {vb.data.apply(vb, Array.prototype.slice.call(arguments));});
-	stream.on('end', function() {vb.end.apply(vb, Array.prototype.slice.call(arguments));});
-};
 	
 VBuf.prototype.eat = function(len) {
 	if (len === 0) {return;}
@@ -87,12 +76,16 @@ VBuf.prototype.truncate = function(len) {
 
 VBuf.prototype.ref = function(len) {
 	// return a truncated vbuf object, can be used to store a reference to the front of stream
-	var trunc = new VBuf(this);
+	var trunc = new VBuf();
+	trunc.offset = this.offset;
+	trunc.length = this.length;
+	trunc.buffers = slice(this.buffers);
+	trunc.ended = this.ended;
+	trunc.total = this.total;
 	trunc.truncate(len);
 	return trunc;
 };
 
-// not sure we should allow reading not from front? prob return array of given len from front using push
 VBuf.prototype.bytes = function(len) {
 	var offset = this.offset;
 	var bytes = [];
@@ -150,9 +143,8 @@ FSM.prototype.unlisten = function(emitter, ev) {
 // convenience function for stream setup
 function StreamFSM(stream, start) {
 	var fsm = new FSM(start);
-	var vb = new VBuf();
+	var vb = new VBuf(stream);
 	fsm.listen(vb, 'buffer');
-	vb.open(stream);
 }
 
 
