@@ -147,10 +147,6 @@ FSM.prototype.unlisten = function(emitter, ev) {
 	}	
 };
 
-
-// add state handler to pass some state around eg event emitter
-
-
 // convenience function for stream setup
 function StreamFSM(stream, start) {
 	var fsm = new FSM(start);

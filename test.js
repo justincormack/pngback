@@ -63,21 +63,30 @@ var emitter = new events.EventEmitter();
 
 var vs;
 
-function vs(bytes) {
+function vs(bytes, vb) {
 	console.log('received ' + bytes);
 	
-	if (bytes === 0) {
-		emitter.emit('end')
+	if (vb.ended) {
+		emitter.emit('end', vb.total);
 		return;
 	}
 	return vs;
+}
+
+function endlisten(size) {
+	console.log("end event recieved, total bytes " + size);
 }
 
 function test2(stream) {
 	// some info from our stream
 	// uses vbuf directly without helper
 
-	var fsm = new png.StreamFSM(stream, vs)
+
+	emitter.on('end', endlisten);
+	
+	var fsm = new png.StreamFSM(stream, vs);
+	
+	
 }
 
 test1();
