@@ -6,10 +6,11 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
 // data object for node buffers, a vector of buffers
 
-// we need to be able to override VBuf to basically add state, unless we use a helper
-// helper could be better, as we need to replace the whole thing if not using node
+// acts as a reciever of stream events and emits 'buffer' events with itself as an argument
 
 function VBuf(obj) {
+	events.EventEmitter.call(this);
+	
 	if (typeof obj == 'object') {
 		this.offset = obj.offset;
 		this.length = obj.length;
@@ -25,24 +26,40 @@ function VBuf(obj) {
 	}
 }
 
+VBuf.super_ = events.EventEmitter;
+
+VBuf.prototype = Object.create(events.EventEmitter.prototype, {
+    constructor: {
+        value: VBuf,
+        enumerable: false
+    }
+});
+
+VBuf.prototype.emitEvent = function(n) {
+	this.emit('buffer', n, this);
+};
+
 VBuf.prototype.data = function(buf) {
 	console.log("data " + buf.length);
 
 	this.buffers.push(buf);
 	this.length += buf.length;
 	this.total += buf.length;
-	return [buf.length];
+	this.emitEvent(buf.length);
 };
 	
 VBuf.prototype.end = function() {
 	console.log("end");
 	this.ended = true;
-	return [0];
+	this.emitEvent(0);
 };
-	
-VBuf.prototype.listen = function(fsm, stream) {
-	fsm.listen(stream, 'data', this.data, this);
-	fsm.listen(stream, 'end', this.end, this);
+
+
+VBuf.prototype.open = function(stream) {
+	var vb = this;
+
+	stream.on('data', function() {vb.data.apply(vb, Array.prototype.slice.call(arguments));});
+	stream.on('end', function() {vb.end.apply(vb, Array.prototype.slice.call(arguments));});
 };
 	
 VBuf.prototype.eat = function(len) {
@@ -103,12 +120,12 @@ function FSM(start) {
 
 FSM.prototype.listen = function(emitter, ev, ef, scope) {
 	var fsm = this;
-	var f = function(arg) {
+	var f = function() {
 		if (typeof(fsm.state) == 'function') {
 			if (typeof ef == 'function') {
-				fsm.state = fsm.state.apply(this, ef.apply(scope, Array.prototype.slice.call(arguments)));
+				fsm.state = fsm.state.apply(fsm, ef.apply(scope, Array.prototype.slice.call(arguments)));
 			} else {
-				fsm.state = fsm.state();
+				fsm.state = fsm.state.apply(fsm, Array.prototype.slice.call(arguments));
 			}
 		} else { // did not return a function so we are done
 			while (fsm.listeners.length) {
@@ -134,9 +151,23 @@ FSM.prototype.unlisten = function(emitter, ev) {
 	}	
 };
 
+
+// add state handler to pass some state around eg event emitter
+
+
+// convenience function for stream setup
+function StreamFSM(stream, start) {
+	var fsm = new FSM(start);
+	var vb = new VBuf();
+	fsm.listen(vb, 'buffer');
+	vb.open(stream);
+}
+
+
 (function(exports) {
 	exports.FSM = FSM;
 	exports.VBuf = VBuf;
+	exports.StreamFSM = StreamFSM;
 })(
 
   typeof exports === 'object' ? exports : this
