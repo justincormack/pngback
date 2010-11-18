@@ -128,7 +128,7 @@ function FSM(start) {
 	this.state = start;
 	this.prev = null;
 	this.listeners = [];
-	this.start(start);
+	this.start();
 }
 
 FSM.super_ = events.EventEmitter;
@@ -163,7 +163,7 @@ FSM.prototype.listen = function(emitter, ev) {
 		fsm.prev = fsm.state;
 		fsm.state = fsm.state.apply(fsm, args);
 		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
-			fsm.finish(fsm.prev);
+			fsm.finish();
 			while (this.listeners.length) {
 				var e = this.listeners.pop();
 				if (typeof e == 'object') {
@@ -172,7 +172,7 @@ FSM.prototype.listen = function(emitter, ev) {
 			}
 		}
 		if (fsm.state !== fsm.prev) { // state change
-			fsm.transition(fsm.prev, fsm.state);
+			fsm.transition();
 		}
 		
 	}
