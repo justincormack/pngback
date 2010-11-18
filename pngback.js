@@ -130,10 +130,13 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
 // maybe restore the passed function. now if listen to multiple events cannot distinguish
 // see if adding ev ok for now? seems to cause issues on apply. hmm annoying
 // is this the best way of ending? Maybe somewhere else should be removing fsm on event?
+// .unshift(ev)
 FSM.prototype.listen = function(emitter, ev) {
 	var fsm = this;
-	var f = function() {
-		fsm.state = fsm.state.apply(fsm, Array.prototype.slice.call(arguments));
+	function f() {
+		var args = Array.prototype.slice.call(arguments);
+		args.unshift(ev);
+		fsm.state = fsm.state.apply(fsm, args);
  		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
 			while (fsm.listeners.length) {
 				var e = fsm.listeners.pop();

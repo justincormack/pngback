@@ -61,8 +61,9 @@ function test1() {
 
 var vs;
 
-function vs(vb) {
-	console.log("vs received data");
+function vs(ev, vb) {
+	//console.log(arguments);
+	console.log("vs received event " + ev);
 	
 	if (vb.ended) {
 		this.emit('end', vb.total);
