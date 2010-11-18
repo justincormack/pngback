@@ -140,17 +140,19 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
     }
 });
 
-FSM.prototype.transition = function(prev, next) {
-	this.emit('transition', this, prev, next);
+FSM.prototype.transition = function() {
+	this.emit('transition', this);
 };
 
-FSM.prototype.start = function(state) {
-	this.emit('start', this, state);
+FSM.prototype.start = function() {
+	this.emit('start');
 };
 
-FSM.prototype.finish = function(state) {
-	this.emit('finish', this, state);
+FSM.prototype.finish = function() {
+	this.emit('finish');
 };
+
+// need to get the finish things out. And make the state change a cleaner fn. ie pre f then post. pull out f into proto
 
 // pass the event (but not emitter) to the function
 FSM.prototype.listen = function(emitter, ev) {
