@@ -141,7 +141,7 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
 });
 
 FSM.prototype.transition = function() {
-	this.emit('transition', this);
+	this.emit('transition');
 };
 
 FSM.prototype.start = function() {
@@ -151,8 +151,6 @@ FSM.prototype.start = function() {
 FSM.prototype.finish = function() {
 	this.emit('finish');
 };
-
-// need to get the finish things out. And make the state change a cleaner fn. ie pre f then post. pull out f into proto
 
 // pass the event (but not emitter) to the function
 FSM.prototype.listen = function(emitter, ev) {
