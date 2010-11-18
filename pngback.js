@@ -2,8 +2,6 @@
 
 var events = require('events');
 
-signature = [137, 80, 78, 71, 13, 10, 26, 10];
-
 // data object for node buffers, a vector of buffers
 
 function VBuf() {
@@ -224,10 +222,17 @@ function match(items, offset) {
 // sequence match-type functions
 function seq() {
 	function g(success, fail) {
-		
+		var args = Array.prototype.slice.call(arguments);
+		var head = args.shift();
+		if (args.length === 0) {
+			return head(success, fail);
+		}
+		return head(seq(args)(success, fail), fail);
 	}
 	return g;
 }
+
+signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
 
 (function(exports) {
@@ -236,6 +241,7 @@ function seq() {
 	exports.StreamBuffer = StreamBuffer;
 	exports.signature = signature;
 	exports.match = match;
+	exports.seq = seq;
 })(
 
   typeof exports === 'object' ? exports : this

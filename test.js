@@ -107,6 +107,16 @@ function test3(filename, stream) {
 	fsm.listen(fsm, 'transition'); // need to listen to entry events in case have not consumed all data
 }
 
+function test4(filename, stream) {
+	var matchsig2 = png.seq([137, 80].map(function (byte) {png.match([byte]);}))(success, fail);
+	var sb = new png.StreamBuffer(stream);
+	var fsm = new png.FSM(matchsig2);
+	fsm.filename = filename;
+	fsm.vb = sb.vb;
+	fsm.listen(sb, 'buffer');
+	fsm.listen(fsm, 'transition');
+}
+
 //test1();
 
 //console.log();
@@ -114,7 +124,7 @@ function test3(filename, stream) {
 process.argv.forEach(function(val, index, array) {
 	if (index > 1) {
 		//test2(fs.ReadStream(val));
-		test3(val, fs.ReadStream(val));
+		test4(val, fs.ReadStream(val));
 	}
 });
 
