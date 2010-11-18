@@ -126,6 +126,7 @@ StreamBuffer.prototype = Object.create(events.EventEmitter.prototype, {
 function FSM(start) {
 	events.EventEmitter.call(this);
 	this.state = start;
+	this.prev = null;
 	this.listeners = [];
 }
 
@@ -138,16 +139,25 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
     }
 });
 
+FSM.prototype.transition = function(prev, next) {
+	this.emit('transition', prev, next);
+};
+
 // pass the event (but not emitter) to the function
 FSM.prototype.listen = function(emitter, ev) {
 	var fsm = this;
 	function f() {
 		var args = Array.prototype.slice.call(arguments);
 		args.unshift(ev);
+		fsm.prev = fsm.state;
 		fsm.state = fsm.state.apply(fsm, args);
 		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
 			fsm.finish();	
 		}
+		if (fsm.state !== fsm.prev) { // state change
+			fsm.transition(fsm.prev, fsm.state);
+		}
+		
 	}
 	this.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
 	emitter.on(ev, f);

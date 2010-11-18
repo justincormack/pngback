@@ -104,6 +104,7 @@ function test3(filename, stream) {
 	fsm.filename = filename;
 	fsm.vb = sb.vb;  // should be in helper
 	fsm.listen(sb, 'buffer');
+	fsm.listen(fsm, 'transition'); // need to listen to entry events in case have not consumed all data
 }
 
 //test1();
