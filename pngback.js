@@ -95,6 +95,7 @@ VBuf.prototype.bytes = function(len) {
 function StreamBuffer(stream) {
 	var vb = new VBuf();
 	var sb = this;
+	this.vb = vb;
 	
 	events.EventEmitter.call(this);
 	
@@ -102,11 +103,11 @@ function StreamBuffer(stream) {
 	
 	stream.on('data', function() {
 		vb.data.apply(vb, Array.prototype.slice.call(arguments));
-		sb.emit('buffer', vb);
+		sb.emit('buffer');
 		});
 	stream.on('end', function() {
 		vb.end.apply(vb, Array.prototype.slice.call(arguments));
-		sb.emit('buffer', vb);
+		sb.emit('buffer');
 		});
 }
 
@@ -176,16 +177,18 @@ FSM.prototype.finish = function() {
 // apply success and fail values
 function match(items, offset) {
 	function g(success, fail) {
-		function f(ev, vb) {
+		function f(ev) {
+			vb = this.vb;
 			offset = typeof offset == 'undefined' ? 0 : offset;
 			if (vb.ended && vb.length - offset < items.length) { // cannot match as not enough data
 				return fail;
 			}
-			if (vb.length - offset === 0) { // nothing to check, try again later
+			if (vb.length - offset === 0) { // nothing to check, wait for more data
 				return f;
 			}
 			var canmatch = (items.length > vb.length - offset) ? vb.length - offset: items.length;
-			var bytes = vb.bytes(canmatch + offset);
+			//canmatch = 1;
+			var bytes = vb.bytes(canmatch + offset); // should be a function to get offset bytes.
 			for (var i = 0; i < canmatch; i++) {
 				if (items[i] !== bytes[i + offset]) {
 					return fail;
@@ -202,7 +205,7 @@ function match(items, offset) {
 	return g;
 }
 
-// sequencematch-type functions
+// sequence match-type functions
 function seq() {
 	function g(success, fail) {
 		

@@ -102,6 +102,7 @@ function test3(filename, stream) {
 	var sb = new png.StreamBuffer(stream);
 	var fsm = new png.FSM(matchsig);
 	fsm.filename = filename;
+	fsm.vb = sb.vb;  // should be in helper
 	fsm.listen(sb, 'buffer');
 }
 
