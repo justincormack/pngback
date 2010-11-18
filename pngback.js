@@ -140,7 +140,7 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
 });
 
 FSM.prototype.transition = function(prev, next) {
-	this.emit('transition', prev, next);
+	this.emit('transition', this, prev, next);
 };
 
 // pass the event (but not emitter) to the function
