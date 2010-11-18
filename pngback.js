@@ -173,31 +173,42 @@ FSM.prototype.finish = function() {
 };
 
 // Functions to match against stream
-// pass success and fail values, normally functions for state change but could be values for composition
-function match(success, fail, items, offset) {
-	offset = typeof offset == 'undefined' ? 0 : offset;
-	function f(ev, vb) {
-		if (vb.ended && vb.length < items.length) { // cannot match as not enough data
-			return fail;
-		}
-		if (vb.length === 0) { // nothing to check, try again later
-			return f;
-		}
-		var canmatch = (items.length + offset > vb.length) ? vb.length : items.length + offset;
-		var bytes = vb.bytes(canmatch);
-		for (var i = offset; i < canmatch; i++) {
-			if (items[i] !== bytes[i]) {
+// apply success and fail values
+function match(items, offset) {
+	function g(success, fail) {
+		function f(ev, vb) {
+			offset = typeof offset == 'undefined' ? 0 : offset;
+			if (vb.ended && vb.length - offset < items.length) { // cannot match as not enough data
 				return fail;
 			}
+			if (vb.length - offset === 0) { // nothing to check, try again later
+				return f;
+			}
+			var canmatch = (items.length > vb.length - offset) ? vb.length - offset: items.length;
+			var bytes = vb.bytes(canmatch + offset);
+			for (var i = 0; i < canmatch; i++) {
+				if (items[i] !== bytes[i + offset]) {
+					return fail;
+				}
+			}
+			if (canmatch === items.length) {
+				vb.eat(canmatch + offset); // eat it, just eat it.
+				return success;
+			}
+			return match(items.slice(canmatch), canmatch + offset)(success, fail);
 		}
-		if (canmatch === items.length) {
-			return success;
-		}
-		return match(success, fail, items.slice(1), canmatch);
+		return f;
 	}
-	return f;
+	return g;
 }
 
+// sequencematch-type functions
+function seq() {
+	function g(success, fail) {
+		
+	}
+	return g;
+}
 
 
 (function(exports) {

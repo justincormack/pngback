@@ -96,7 +96,7 @@ function fail() {
 	console.log(this.filename + " is not a png file");
 }
 
-matchsig = png.match(success, fail, png.signature);
+matchsig = png.match(png.signature)(success, fail);
 
 function test3(filename, stream) {
 	var sb = new png.StreamBuffer(stream);
