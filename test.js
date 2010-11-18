@@ -88,13 +88,31 @@ function test2(stream) {
 	
 }
 
-test1();
+function success() {
+	console.log(this.filename + " is a png file");
+}
 
-console.log();
+function fail() {
+	console.log(this.filename + " is not a png file");
+}
+
+matchsig = png.match(success, fail, png.signature);
+
+function test3(filename, stream) {
+	var sb = new png.StreamBuffer(stream);
+	var fsm = new png.FSM(matchsig);
+	fsm.filename = filename;
+	fsm.listen(sb, 'buffer');
+}
+
+//test1();
+
+//console.log();
 
 process.argv.forEach(function(val, index, array) {
 	if (index > 1) {
-		test2(fs.ReadStream(val));
+		//test2(fs.ReadStream(val));
+		test3(val, fs.ReadStream(val));
 	}
 });
 

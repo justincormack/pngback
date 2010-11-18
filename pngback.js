@@ -15,15 +15,12 @@ function VBuf() {
 }
 
 VBuf.prototype.data = function(buf) {
-	console.log("data " + buf.length);
-
 	this.buffers.push(buf);
 	this.length += buf.length;
 	this.total += buf.length;
 };
 	
 VBuf.prototype.end = function() {
-	console.log("end");
 	this.ended = true;
 };
 	
@@ -62,6 +59,20 @@ VBuf.prototype.ref = function(len) {
 	return trunc;
 };
 
+// not sure which fns we need
+VBuf.prototype.head = function() {
+	var offset = this.offset;
+	var buf = 0;
+	if (this.length === 0) {
+		return;
+	}
+	while (this.buffers[buf].length <= offset) {
+		offset = 0;
+		buf++;
+	}
+	return this.buffers[buf][offset];
+};
+
 VBuf.prototype.bytes = function(len) {
 	var offset = this.offset;
 	var bytes = [];
@@ -72,7 +83,7 @@ VBuf.prototype.bytes = function(len) {
 			offset = 0;
 			buf++;
 		}
-		bytes.push(this.buffers[buf][offset]);
+		bytes.push(this.buffers[buf][offset++]);
 	}
 	return bytes;
 };
@@ -109,7 +120,6 @@ StreamBuffer.prototype = Object.create(events.EventEmitter.prototype, {
 });
 
 // FSM. receives events and has an emitter for the state functions to use.
-// oops we want to keep a set of transition events that get passed along.
 // aha, we want an emitter for each fsm, which the functions get to use
 
 function FSM(start) {
@@ -127,25 +137,17 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
     }
 });
 
-// maybe restore the passed function. now if listen to multiple events cannot distinguish
-// see if adding ev ok for now? seems to cause issues on apply. hmm annoying
-// is this the best way of ending? Maybe somewhere else should be removing fsm on event?
-// .unshift(ev)
+// pass the event (but not emitter) to the function
 FSM.prototype.listen = function(emitter, ev) {
 	var fsm = this;
 	function f() {
 		var args = Array.prototype.slice.call(arguments);
 		args.unshift(ev);
 		fsm.state = fsm.state.apply(fsm, args);
- 		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
-			while (fsm.listeners.length) {
-				var e = fsm.listeners.pop();
-				if (typeof e == 'object') {
-					e.emitter.removeListener(e.ev, e.f);
-				}
-			}	
+		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
+			fsm.finish();	
 		}
-	};
+	}
 	this.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
 	emitter.on(ev, f);
 };
@@ -161,24 +163,37 @@ FSM.prototype.unlisten = function(emitter, ev) {
 	}	
 };
 
+FSM.prototype.finish = function() {
+	while (this.listeners.length) {
+		var e = this.listeners.pop();
+		if (typeof e == 'object') {
+			e.emitter.removeListener(e.ev, e.f);
+		}
+	}
+};
 
 // Functions to match against stream
 // pass success and fail values, normally functions for state change but could be values for composition
-function Match(success, fail, items) {
-	var f;
-	f = function(vb) {
+function match(success, fail, items, offset) {
+	offset = typeof offset == 'undefined' ? 0 : offset;
+	function f(ev, vb) {
 		if (vb.ended && vb.length < items.length) { // cannot match as not enough data
 			return fail;
 		}
 		if (vb.length === 0) { // nothing to check, try again later
 			return f;
 		}
-		var canmatch = (items.length > vb.length) ? vb.length : items.length;
-		for (var i = 0; i < canmatch; i++) {
-			
+		var canmatch = (items.length + offset > vb.length) ? vb.length : items.length + offset;
+		var bytes = vb.bytes(canmatch);
+		for (var i = offset; i < canmatch; i++) {
+			if (items[i] !== bytes[i]) {
+				return fail;
+			}
 		}
-		
-		
+		if (canmatch === items.length) {
+			return success;
+		}
+		return match(success, fail, items.slice(1), canmatch);
 	}
 	return f;
 }
@@ -189,6 +204,8 @@ function Match(success, fail, items) {
 	exports.FSM = FSM;
 	exports.VBuf = VBuf;
 	exports.StreamBuffer = StreamBuffer;
+	exports.signature = signature;
+	exports.match = match;
 })(
 
   typeof exports === 'object' ? exports : this
