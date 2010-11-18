@@ -220,6 +220,7 @@ function match(items, offset) {
 }
 
 // sequence match-type functions
+// seeming to run out of stack space. try iterative version? we dont need the recursion! can just create the fns
 function seq() {
 	function g(success, fail) {
 		var args = Array.prototype.slice.call(arguments);
@@ -228,6 +229,19 @@ function seq() {
 			return head(success, fail);
 		}
 		return head(seq(args)(success, fail), fail);
+	}
+	return g;
+}
+
+function seq2() {
+	function g(success, fail) {
+		var args = Array.prototype.slice.call(arguments);
+		var prev = success;
+		while (args.length > 0) {
+			head = args.pop()(prev, fail);
+			prev = head;
+		}
+		return head;
 	}
 	return g;
 }
@@ -242,6 +256,7 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 	exports.signature = signature;
 	exports.match = match;
 	exports.seq = seq;
+	exports.seq2 = seq2;
 })(
 
   typeof exports === 'object' ? exports : this
