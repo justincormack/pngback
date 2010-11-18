@@ -128,6 +128,7 @@ function FSM(start) {
 	this.state = start;
 	this.prev = null;
 	this.listeners = [];
+	this.start(start);
 }
 
 FSM.super_ = events.EventEmitter;
@@ -143,6 +144,14 @@ FSM.prototype.transition = function(prev, next) {
 	this.emit('transition', this, prev, next);
 };
 
+FSM.prototype.start = function(state) {
+	this.emit('start', this, state);
+};
+
+FSM.prototype.finish = function(state) {
+	this.emit('finish', this, state);
+};
+
 // pass the event (but not emitter) to the function
 FSM.prototype.listen = function(emitter, ev) {
 	var fsm = this;
@@ -152,7 +161,13 @@ FSM.prototype.listen = function(emitter, ev) {
 		fsm.prev = fsm.state;
 		fsm.state = fsm.state.apply(fsm, args);
 		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
-			fsm.finish();	
+			fsm.finish(fsm.prev);
+			while (this.listeners.length) {
+				var e = this.listeners.pop();
+				if (typeof e == 'object') {
+					e.emitter.removeListener(e.ev, e.f);
+				}
+			}
 		}
 		if (fsm.state !== fsm.prev) { // state change
 			fsm.transition(fsm.prev, fsm.state);
@@ -172,15 +187,6 @@ FSM.prototype.unlisten = function(emitter, ev) {
 			return;
 		}
 	}	
-};
-
-FSM.prototype.finish = function() {
-	while (this.listeners.length) {
-		var e = this.listeners.pop();
-		if (typeof e == 'object') {
-			e.emitter.removeListener(e.ev, e.f);
-		}
-	}
 };
 
 // Functions to match against stream
