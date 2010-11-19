@@ -113,7 +113,7 @@ function dumpargs() {
 }
 	
 function test4(filename, stream) {
-	var fns = png.signature.map(png.match);
+	var fns = png.signature.map(png.accept);
 	var matchsig2 = png.seq.apply(null, fns)(success, fail);
 	var sb = new png.StreamBuffer(stream);
 	var fsm = new png.FSM(matchsig2);

@@ -219,43 +219,51 @@ FSM.prototype.listen = function(emitter, ev) {
 // apply success and fail values
 // would be nice if you didnt have to put in offset. Changing values to undefined would be a way, so undefined does not check...
 // for now making an internal only helper with the offset...
-function match(items) {
-	if (! isArray(items)) {
-		items = [items];
-	}
+
+// pull out the actual matching op, so we can do stuff in it.
+
+function match(check) {
 	function g(success, fail) {
-		function f(ev) {
+		function f() {
 			vb = this.vb;
-			if (vb.ended && vb.length < items.length) { // cannot match as not enough data
-				return fail;
+			var ret = check(vb);
+			if (typeof ret == 'undefined') {
+				return g;
 			}
-			if (vb.length === 0) { // nothing to check, wait for more data
-				return f;
-			}
-			var canmatch = (items.length > vb.length) ? vb.length: items.length;
-			//canmatch = 1;
-			var bytes = vb.bytes(canmatch);
-			for (var i = 0; i < canmatch; i++) {
-				if (typeof items[i] == 'number' && items[i] !== bytes[i]) {
-					return fail;
-				}
-				// note we could delete items[i] at this point, so no comparison if repeated
-			}
-			if (canmatch === items.length) {
-				// need to pass the value here.
-				var matched = vb.ref(canmatch);
-				// where to???? choices seem to be pass to transition event, or make new success function with it as arg, or to emit in event.
-				// slightly leaning towards new success fn. Or all success fns are fns of the val? ie always return success(matched).
-				// that would kill seq though, as it would not know what to do with vals? no, makes it harder though, needs to chain them through
-				vb.eat(canmatch); // eat it, just eat it.
-				return success;
-			}
-			return match(items)(success, fail);
+			return (ret === true) ? success : fail;
 		}
 		return f;
 	}
 	return g;
 }
+
+// an accept function - matches a list of bytes, as our original match was
+function accept(items) {
+	if (! isArray(items)) {
+		items = [items];
+	}
+	function f(vb) {
+		if (vb.ended && vb.length < items.length) { // cannot match as not enough data
+			return false;
+		}
+		var canmatch = (items.length > vb.length) ? vb.length: items.length;
+		//canmatch = 1;
+		var bytes = vb.bytes(canmatch);
+		for (var i = 0; i < canmatch; i++) {
+			if (items[i] !== bytes[i]) {
+				return false;
+			}
+		}
+		if (canmatch === items.length) {
+			vb.eat(canmatch); // eat it, just eat it.
+			return true;
+		}
+		return undefined; // need more data to determine
+	}
+	return match(f);
+}
+
+
 
 // sequence match-type functions
 function seq() {
@@ -280,6 +288,7 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 	exports.VBuf = VBuf;
 	exports.StreamBuffer = StreamBuffer;
 	exports.signature = signature;
+	exports.accept = accept;
 	exports.match = match;
 	exports.seq = seq;
 })(
