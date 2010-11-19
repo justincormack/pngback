@@ -86,6 +86,25 @@ VBuf.prototype.bytes = function(len) {
 	return bytes;
 };
 
+// little object to store events so we can unlisten easily
+function Evstore () {
+	this.listeners = [];
+	this.test= 3;
+}
+
+Evstore.prototype.add = function(emitter, ev, f) {
+	this.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
+	emitter.on(ev, f);
+};
+
+Evstore.prototype.finish = function() {
+	var e;
+	while (this.listeners.length) {
+		e = this.listeners.pop();
+		e.emitter.removeListener(e.ev, e.f);
+	}	
+};
+
 // StreamBuffer handles the events and streams, creates VBuf to store data
 
 // less clear where we should handle error events etc. also if we should get a stream creation fn and manage the stream ourselves
@@ -94,11 +113,15 @@ function StreamBuffer(stream) {
 	
 	events.EventEmitter.call(this);
 		
-	var vb = new VBuf();
-	this.vb = vb;
+	this.vb = new VBuf();
+	this.es = new Evstore();
+	
 	this.stream = stream;
 	
 	this.levents.map(this.evfn, this);
+	
+	//console.log(this);
+	//console.log("after create");
 }
 
 StreamBuffer.super_ = events.EventEmitter;
@@ -122,14 +145,15 @@ StreamBuffer.prototype.vbfn = function(ev) {
 };
 
 StreamBuffer.prototype.evfn = function(ev) {
-	this.stream.on(ev, this.vbfn(ev));
+	this.es.add(this.stream, ev, this.vbfn(ev));
 };
 
 // not sure our use of finish here is quite consistent
 StreamBuffer.prototype.finish = function() {
-	//unlisten here. Make a generic listener managing object and use this for here and fsm
+	//console.log(this);
+	this.es.finish();
 	delete this.vb;
-	delete this.stream;
+	this.stream.destroy();
 };
 
 // FSM. receives events and has an emitter for the state functions to use.
@@ -139,7 +163,7 @@ function FSM(start) {
 	events.EventEmitter.call(this);
 	this.state = start;
 	this.prev = null;
-	this.listeners = [];
+	this.es = new Evstore();
 	this.start();
 }
 
@@ -173,19 +197,15 @@ FSM.prototype.listen = function(emitter, ev) {
 		fsm.prev = fsm.state;
 		fsm.state = fsm.state.apply(fsm, args);
 		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
+			fsm.es.finish();
 			fsm.finish();
-			while (this.listeners.length) {
-				var e = this.listeners.pop();
-				e.emitter.removeListener(e.ev, e.f);
-			}
 		}
 		if (fsm.state !== fsm.prev) { // state change
 			fsm.transition();
 		}
 		
 	}
-	this.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
-	emitter.on(ev, f);
+	this.es.add(emitter, ev, f);
 };
 
 // Functions to match against stream

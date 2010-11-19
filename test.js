@@ -90,10 +90,12 @@ function test2(stream) {
 
 function success() {
 	console.log(this.filename + " is a png file");
+	//this.sb.finish();
 }
 
 function fail() {
 	console.log(this.filename + " is not a png file");
+	//this.sb.finish();
 }
 
 
@@ -111,16 +113,18 @@ function test3(filename, stream) {
 function dumpargs() {
 	console.log(arguments);
 }
-
+	
 function test4(filename, stream) {
 	var fns = png.signature.map(png.match);
 	var matchsig2 = png.seq.apply(null, fns)(success, fail);
 	var sb = new png.StreamBuffer(stream);
 	var fsm = new png.FSM(matchsig2);
 	fsm.filename = filename;
+	fsm.sb = sb;
 	fsm.vb = sb.vb;
 	fsm.listen(sb, 'buffer');
 	fsm.listen(fsm, 'transition');
+	fsm.on('finish', function() {sb.finish.apply(sb, Array.prototype.slice.call(arguments));});
 }
 
 //test1();
