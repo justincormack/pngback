@@ -2,6 +2,11 @@
 
 var events = require('events');
 
+// extend eventEmitter to be able to emit an event in a different scope than that of the eventEmitter itself
+events.EventEmitter.prototype.on2 = function(ev, f, scope) {
+	this.on(ev, function() {f.apply(scope, Array.prototype.slice.call(arguments));});
+};
+
 // data object for node buffers, a vector of buffers
 
 function VBuf() {
