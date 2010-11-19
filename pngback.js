@@ -219,14 +219,14 @@ FSM.prototype.listen = function(emitter, ev) {
 // apply success and fail values
 // would be nice if you didnt have to put in offset. Changing values to undefined would be a way, so undefined does not check...
 // for now making an internal only helper with the offset...
+// should these functions be prototypes of a type of fsm?
 
 // pull out the actual matching op, so we can do stuff in it.
 
 function match(check) {
 	function g(success, fail) {
 		function f() {
-			vb = this.vb;
-			var ret = check(vb);
+			var ret = check.call(this, this.vb);
 			if (typeof ret == 'undefined') {
 				return g;
 			}
@@ -263,11 +263,11 @@ function accept(items) {
 	return match(f);
 }
 
-
-
 // sequence match-type functions
-function seq() {
-	var args = Array.prototype.slice.call(arguments);
+function seq(args) {
+	if (! isArray(args)) {
+		args = Array.prototype.slice.call(arguments);
+	}
 	function g(success, fail) {
 		var head = null;
 		var prev = success;
@@ -280,8 +280,41 @@ function seq() {
 	return g;
 }
 
+/* png specific from here */
+
+// png file signature
 signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
+
+function to32(bytes) {
+	return (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
+}
+
+function chunk_len(vb) {
+	if (vb.ended && vb.length < 4) { // cannot match as not enough data
+		return false;
+	}
+	if (vb.length < 4) {
+		return undefined;
+	}
+	var bytes = vb.bytes(4);
+
+	if (bytes[0] & 0x80) { // high bit must not be set
+		return false;
+	}
+	var len = to32(bytes);
+	this.chunk_len = len;
+	
+	// probably a good idea to add a smaller length check here...
+	
+	vb.eat(4);
+	
+	return true;
+}
+
+var match_chunk_len = match(chunk_len);
+
+var match_signature = accept(signature);
 
 (function(exports) {
 	exports.FSM = FSM;
@@ -291,6 +324,8 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 	exports.accept = accept;
 	exports.match = match;
 	exports.seq = seq;
+	exports.match_chunk_len = match_chunk_len;
+	exports.match_signature = match_signature;
 })(
 
   typeof exports === 'object' ? exports : this

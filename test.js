@@ -90,6 +90,7 @@ function test2(stream) {
 
 function success() {
 	console.log(this.filename + " is a png file");
+	console.log("first chunk len is "+ this.chunk_len);
 }
 
 function fail() {
@@ -97,16 +98,6 @@ function fail() {
 }
 
 
-
-function test3(filename, stream) {
-	var matchsig = png.match(png.signature)(success, fail);
-	var sb = new png.StreamBuffer(stream);
-	var fsm = new png.FSM(matchsig);
-	fsm.filename = filename;
-	fsm.vb = sb.vb;  // should be in helper
-	fsm.listen(sb, 'buffer');
-	fsm.listen(fsm, 'transition'); // need to listen to entry events in case have not consumed all data
-}
 
 function dumpargs() {
 	console.log(arguments);
@@ -124,12 +115,23 @@ function test4(filename, stream) {
 	fsm.on2('finish', sb.finish, sb);
 }
 
+function test5(filename, stream) {
+	var rec = png.seq(png.match_signature, png.match_chunk_len)(success, fail);
+	var sb = new png.StreamBuffer(stream);
+	var fsm = new png.FSM(rec);
+	fsm.filename = filename;
+	fsm.vb = sb.vb;
+	fsm.listen(sb, 'buffer');
+	fsm.listen(fsm, 'transition');
+	fsm.on2('finish', sb.finish, sb);
+}
+
 //test1();
 
 process.argv.forEach(function(val, index, array) {
 	if (index > 1) {
 		//test2(fs.ReadStream(val));
-		test4(val, fs.ReadStream(val));
+		test5(val, fs.ReadStream(val));
 	}
 });
 
