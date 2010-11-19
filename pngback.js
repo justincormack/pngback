@@ -44,20 +44,20 @@ VBuf.prototype.truncate = function(len) {
 	// truncate this vbuf
 	if (len > this.length) {len = this.length;}
 	var drop = this.length - len;
-	this.length = len;
-	this.ended = true;
-	while (this.buffers[this.buffers.length - 1].length >= drop) {
+	while (this.buffers[this.buffers.length - 1].length <= drop) {
 		drop -= this.buffers[this.buffers.length - 1].length;
 		this.buffers.pop();
 	}
+	this.length = len;
+	this.ended = true;	
 };
 
 VBuf.prototype.ref = function(len) {
 	// return a truncated vbuf object, can be used to store a reference to the front of stream
 	var trunc = new VBuf();
+	trunc.buffers = this.buffers.slice();
 	trunc.offset = this.offset;
 	trunc.length = this.length;
-	trunc.buffers = slice(this.buffers);
 	trunc.ended = this.ended;
 	trunc.total = this.total;
 	trunc.truncate(len);
