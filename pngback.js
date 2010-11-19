@@ -164,7 +164,7 @@ StreamBuffer.prototype.finish = function() {
 
 // FSM. receives events and has an emitter for the state functions to use.
 // aha, we want an emitter for each fsm, which the functions get to use
-// should an fsm be a function, so can use it as a component of another fsm? or just evented composition?
+// should an fsm be a function, so can use it as a component of another fsm? or just evented composition? or can we use functions to compose?
 // also should listen events be constructors?
 function FSM(start) {
 	events.EventEmitter.call(this);
@@ -263,6 +263,27 @@ function accept(items) {
 	return match(f);
 }
 
+// general get n bytes, but no checks until end when call check. accept could use, but in some cases good to fail sooner. passes as bytes not vb
+function get(len, check) {
+	function f() {
+		vb = this.vb;
+		if (vb.ended && vb.length < len) { // cannot match as not enough data
+			return false;
+		}
+		if (vb.length < len) {
+			return undefined;
+		}
+		var bytes = vb.bytes(len);
+	
+		if (check.call(this, bytes)) {
+			vb.eat(len);
+			return true;
+		}
+		return false;
+	}
+	return match(f);
+}
+
 // sequence match-type functions
 function seq(args) {
 	if (! isArray(args)) {
@@ -280,6 +301,8 @@ function seq(args) {
 	return g;
 }
 
+
+
 /* png specific from here */
 
 // png file signature
@@ -290,29 +313,17 @@ function to32(bytes) {
 	return (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
 }
 
-function chunk_len(vb) {
-	if (vb.ended && vb.length < 4) { // cannot match as not enough data
-		return false;
-	}
-	if (vb.length < 4) {
-		return undefined;
-	}
-	var bytes = vb.bytes(4);
-
+function chunk_len(bytes) {
 	if (bytes[0] & 0x80) { // high bit must not be set
 		return false;
 	}
 	var len = to32(bytes);
-	this.chunk_len = len;
-	
 	// probably a good idea to add a smaller length check here...
-	
-	vb.eat(4);
-	
+	this.chunk_len = len;
 	return true;
 }
 
-var match_chunk_len = match(chunk_len);
+var match_chunk_len = get(4, chunk_len);
 
 var match_signature = accept(signature);
 
