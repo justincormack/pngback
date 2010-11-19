@@ -96,9 +96,10 @@ function fail() {
 	console.log(this.filename + " is not a png file");
 }
 
-matchsig = png.match(png.signature)(success, fail);
+
 
 function test3(filename, stream) {
+	var matchsig = png.match(png.signature)(success, fail);
 	var sb = new png.StreamBuffer(stream);
 	var fsm = new png.FSM(matchsig);
 	fsm.filename = filename;
@@ -107,11 +108,13 @@ function test3(filename, stream) {
 	fsm.listen(fsm, 'transition'); // need to listen to entry events in case have not consumed all data
 }
 
+function dumpargs() {
+	console.log(arguments);
+}
+
 function test4(filename, stream) {
-	var fns = png.signature.map(function (b) {return png.match([b]);});
-	//console.log(fns);
+	var fns = png.signature.map(png.match);
 	var matchsig2 = png.seq.apply(null, fns)(success, fail);
-	//console.log("hmm");
 	var sb = new png.StreamBuffer(stream);
 	var fsm = new png.FSM(matchsig2);
 	fsm.filename = filename;

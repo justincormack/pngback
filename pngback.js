@@ -189,11 +189,12 @@ FSM.prototype.unlisten = function(emitter, ev) {
 
 // Functions to match against stream
 // apply success and fail values
-function match(items, offset) {
+// would be nice if you didnt have to put in offset. Changing values to undefined would be a way, so undefined does not check...
+// for now making an internal only helper with the offset...
+function match2(items, offset) {
 	function g(success, fail) {
 		function f(ev) {
 			vb = this.vb;
-			offset = typeof offset == 'undefined' ? 0 : offset;
 			if (vb.ended && vb.length - offset < items.length) { // cannot match as not enough data
 				return fail;
 			}
@@ -212,17 +213,25 @@ function match(items, offset) {
 				vb.eat(canmatch + offset); // eat it, just eat it.
 				return success;
 			}
-			return match(items.slice(canmatch), canmatch + offset)(success, fail);
+			return match2(items.slice(canmatch), canmatch + offset)(success, fail);
 		}
 		return f;
 	}
 	return g;
 }
 
+function match(items) {
+	if (typeof items == 'number') {
+		return match2([items], 0);
+	}
+	return match2(items, 0);
+}
+
 // sequence match-type functions
 function seq() {
 	var args = Array.prototype.slice.call(arguments);
 	function g(success, fail) {
+		var head = null;
 		var prev = success;
 		while (args.length > 0) {
 			head = args.pop()(prev, fail);
