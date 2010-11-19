@@ -96,7 +96,6 @@ VBuf.prototype.bytes = function(len) {
 // little object to store events so we can unlisten easily
 function Evstore () {
 	this.listeners = [];
-	this.test= 3;
 }
 
 Evstore.prototype.add = function(emitter, ev, f) {
@@ -243,6 +242,11 @@ function match(items) {
 				// note we could delete items[i] at this point, so no comparison if repeated
 			}
 			if (canmatch === items.length) {
+				// need to pass the value here.
+				var matched = vb.ref(canmatch);
+				// where to???? choices seem to be pass to transition event, or make new success function with it as arg, or to emit in event.
+				// slightly leaning towards new success fn. Or all success fns are fns of the val? ie always return success(matched).
+				// that would kill seq though, as it would not know what to do with vals? no, makes it harder though, needs to chain them through
 				vb.eat(canmatch); // eat it, just eat it.
 				return success;
 			}
