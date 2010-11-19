@@ -2,6 +2,8 @@
 
 var events = require('events');
 
+var isArray = Array.isArray;
+
 // extend eventEmitter to be able to emit an event in a different scope than that of the eventEmitter itself
 events.EventEmitter.prototype.on2 = function(ev, f, scope) {
 	this.on(ev, function() {f.apply(scope, Array.prototype.slice.call(arguments));});
@@ -219,7 +221,7 @@ FSM.prototype.listen = function(emitter, ev) {
 // would be nice if you didnt have to put in offset. Changing values to undefined would be a way, so undefined does not check...
 // for now making an internal only helper with the offset...
 function match(items) {
-	if (typeof items == 'number') {
+	if (! isArray(items)) {
 		items = [items];
 	}
 	function g(success, fail) {
@@ -232,7 +234,7 @@ function match(items) {
 				return f;
 			}
 			var canmatch = (items.length > vb.length) ? vb.length: items.length;
-			canmatch = 1;
+			//canmatch = 1;
 			var bytes = vb.bytes(canmatch);
 			for (var i = 0; i < canmatch; i++) {
 				if (typeof items[i] == 'number' && items[i] !== bytes[i]) {
