@@ -110,7 +110,7 @@ function test3(filename, stream) {
 function test4(filename, stream) {
 	var fns = png.signature.map(function (b) {return png.match([b]);});
 	//console.log(fns);
-	var matchsig2 = png.seq2(fns)(success, fail);
+	var matchsig2 = png.seq2.apply(null, fns)(success, fail);
 	//console.log("hmm");
 	var sb = new png.StreamBuffer(stream);
 	var fsm = new png.FSM(matchsig2);

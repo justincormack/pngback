@@ -234,8 +234,8 @@ function seq() {
 }
 
 function seq2() {
+	var args = Array.prototype.slice.call(arguments);
 	function g(success, fail) {
-		var args = Array.prototype.slice.call(arguments);
 		var prev = success;
 		while (args.length > 0) {
 			head = args.pop()(prev, fail);
