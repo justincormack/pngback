@@ -163,7 +163,8 @@ StreamBuffer.prototype.finish = function() {
 
 // FSM. receives events and has an emitter for the state functions to use.
 // aha, we want an emitter for each fsm, which the functions get to use
-
+// should an fsm be a function, so can use it as a component of another fsm? or just evented composition?
+// also should listen events be constructors?
 function FSM(start) {
 	events.EventEmitter.call(this);
 	this.state = start;
@@ -217,40 +218,37 @@ FSM.prototype.listen = function(emitter, ev) {
 // apply success and fail values
 // would be nice if you didnt have to put in offset. Changing values to undefined would be a way, so undefined does not check...
 // for now making an internal only helper with the offset...
-function match2(items, offset) {
+function match(items) {
+	if (typeof items == 'number') {
+		items = [items];
+	}
 	function g(success, fail) {
 		function f(ev) {
 			vb = this.vb;
-			if (vb.ended && vb.length - offset < items.length) { // cannot match as not enough data
+			if (vb.ended && vb.length < items.length) { // cannot match as not enough data
 				return fail;
 			}
-			if (vb.length - offset === 0) { // nothing to check, wait for more data
+			if (vb.length === 0) { // nothing to check, wait for more data
 				return f;
 			}
-			var canmatch = (items.length > vb.length - offset) ? vb.length - offset: items.length;
-			//canmatch = 1;
-			var bytes = vb.bytes(canmatch + offset); // should be a function to get offset bytes.
+			var canmatch = (items.length > vb.length) ? vb.length: items.length;
+			canmatch = 1;
+			var bytes = vb.bytes(canmatch);
 			for (var i = 0; i < canmatch; i++) {
-				if (items[i] !== bytes[i + offset]) {
+				if (typeof items[i] == 'number' && items[i] !== bytes[i]) {
 					return fail;
 				}
+				// note we could delete items[i] at this point, so no comparison if repeated
 			}
 			if (canmatch === items.length) {
-				vb.eat(canmatch + offset); // eat it, just eat it.
+				vb.eat(canmatch); // eat it, just eat it.
 				return success;
 			}
-			return match2(items.slice(canmatch), canmatch + offset)(success, fail);
+			return match(items)(success, fail);
 		}
 		return f;
 	}
 	return g;
-}
-
-function match(items) {
-	if (typeof items == 'number') {
-		return match2([items], 0);
-	}
-	return match2(items, 0);
 }
 
 // sequence match-type functions

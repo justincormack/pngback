@@ -124,13 +124,10 @@ function test4(filename, stream) {
 	fsm.vb = sb.vb;
 	fsm.listen(sb, 'buffer');
 	fsm.listen(fsm, 'transition');
-	//fsm.on('finish', function() {sb.finish.apply(sb, Array.prototype.slice.call(arguments));});
 	fsm.on2('finish', sb.finish, sb);
 }
 
 //test1();
-
-//console.log();
 
 process.argv.forEach(function(val, index, array) {
 	if (index > 1) {
