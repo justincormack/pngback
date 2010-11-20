@@ -300,6 +300,13 @@ function get(len, check) {
 	return match(f);
 }
 
+function eof() {
+	function f() {
+		return this.vb.ended;
+	}
+	return match(f);
+}
+
 // sequence match-type functions
 function seq(args) {
 	if (! isArray(args)) {
@@ -316,6 +323,18 @@ function seq(args) {
 	}
 	return g;
 }
+
+// match any number of items, greedy. this version has explicit end function, other variants possible
+function loop(f, end) {
+	function g(success, fail) {
+		var head, tail;
+		head = end(success, tail);
+		tail = f(head, fail);
+		return head;
+	}
+	return g;
+}
+
 
 /* crc32 - seems like a fairly standard one so not yet namespaced as png */
 var crc32 = {
@@ -383,6 +402,8 @@ function to32(bytes) {
 
 var match_signature = accept(signature);
 
+
+// merge chunk len and chunk type? or even all 4! That would be more efficient
 function chunk_len(bytes) {
 	if (bytes[0] & 0x80) { // high bit must not be set
 		return false;
@@ -441,6 +462,14 @@ function chunk_crc(bytes) {
 
 var match_chunk_crc = get(4, chunk_crc);
 
+var match_eof = eof(); // surely we can clean this up somehow? had issues before?
+
+//rewrite as one fn!
+var match_chunk = seq(match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
+
+//var match_png = seq(match_signature, match_chunk, match_chunk, loop(match_chunk, match_eof));
+var match_png = seq(match_signature, match_chunk, match_chunk);
+
 (function(exports) {
 	exports.FSM = FSM;
 	exports.VBuf = VBuf;
@@ -449,11 +478,8 @@ var match_chunk_crc = get(4, chunk_crc);
 	exports.accept = accept;
 	exports.match = match;
 	exports.seq = seq;
-	exports.match_signature = match_signature;
-	exports.match_chunk_len = match_chunk_len;
-	exports.match_chunk_type = match_chunk_type;
-	exports.match_chunk_data = match_chunk_data;
-	exports.match_chunk_crc = match_chunk_crc;
+	exports.loop = loop;
+	exports.match_png = match_png;
 })(
 
   typeof exports === 'object' ? exports : this

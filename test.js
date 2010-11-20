@@ -115,7 +115,7 @@ function test4(filename, stream) {
 }
 
 function test5(filename, stream) {
-	var rec = png.seq(png.match_signature, png.match_chunk_len, png.match_chunk_type, png.match_chunk_data, png.match_chunk_crc)(success, fail);
+	var rec = png.match_png(success, fail);
 	var sb = new png.StreamBuffer(stream);
 	var fsm = new png.FSM(rec);
 	fsm.filename = filename;
