@@ -6,6 +6,7 @@
 // can stream out buffer data from chunks to next layer out, wg so can start to inflate chunk before checksum
 // make eat the usual behaviour, ie most stuff greedy, return proper closures to continue with the partial results 
 
+// merge all the functions into one big one stops the stupid lack of encapsulation shit, and we can store all the state in the function until we fire event
 
 
 var events = require('events');
@@ -474,10 +475,14 @@ var match_eof = eof(); // surely we can clean this up somehow? had issues before
 
 //rewrite as one fn!
 var match_chunk = seq(match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
+var match_chunk2 = seq(match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
 
+var c1 = seq(match_chunk_len, match_chunk_type);
+var c2 = seq(match_chunk_data, match_chunk_crc)
 //var match_png = seq(match_signature, match_chunk, match_chunk, loop(match_chunk, match_eof));
-//var match_png = seq(match_signature, match_chunk, match_chunk);
-var match_png = seq(match_signature, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
+var match_png = seq(match_signature, match_chunk, match_chunk2);
+//var match_png = seq(match_signature, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
+
 
 (function(exports) {
 	exports.FSM = FSM;
