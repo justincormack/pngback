@@ -1,5 +1,13 @@
 // pngback. A PNG library for Javascript
 
+
+// make vbuf just array of buffer, offset, len to simplify
+// get rid of ended - use end events properly, ie get these functions to check for them
+// can stream out buffer data from chunks to next layer out, wg so can start to inflate chunk before checksum
+// make eat the usual behaviour, ie most stuff greedy, return proper closures to continue with the partial results 
+
+
+
 var events = require('events');
 
 var isArray = Array.isArray;
@@ -468,7 +476,8 @@ var match_eof = eof(); // surely we can clean this up somehow? had issues before
 var match_chunk = seq(match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
 
 //var match_png = seq(match_signature, match_chunk, match_chunk, loop(match_chunk, match_eof));
-var match_png = seq(match_signature, match_chunk, match_chunk);
+//var match_png = seq(match_signature, match_chunk, match_chunk);
+var match_png = seq(match_signature, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
 
 (function(exports) {
 	exports.FSM = FSM;
