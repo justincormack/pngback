@@ -90,7 +90,6 @@ function test2(stream) {
 
 function success() {
 	console.log(this.filename + " is a png file");
-	console.log("first chunk len is "+ this.chunk_len);
 }
 
 function fail() {

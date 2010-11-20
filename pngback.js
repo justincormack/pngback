@@ -363,7 +363,7 @@ var crc32 = {
 };
 
 crc32.start();
-console.log(crc32.table);
+//console.log(crc32.table);
 
 /* png specific from here */
 // these should be methods of a png fsm.
@@ -411,7 +411,7 @@ function chunk_type(bytes) {
 var match_chunk_type = get(4, chunk_type);
 
 // duplicating code here again, need to refactor? chunk_len tied in too much!
-function match_chunk_data() {
+function chunk_data() {
 	function f() {
 		len = this.chunk_len;
 		vb = this.vb;
@@ -425,11 +425,12 @@ function match_chunk_data() {
 		this.crc.finalize();
 		this.chunk_data = vb.ref(len);
 		vb.eat(len);
-		console.log("got data " + len + " crc is " + this.crc.crc);
 		return true;
 	}
 	return match(f);
 }
+
+var match_chunk_data = chunk_data();
 
 function chunk_crc(bytes) {
 	console.log("crc " + (to32(bytes)) + " vs " + this.crc.crc);
