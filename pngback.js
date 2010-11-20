@@ -321,41 +321,49 @@ function seq(args) {
 var crc32 = {
 	seed: 0xedb88320,
 	crc: 0xffffffff,
-	//inittable: ,
-	table: function() {
-		var table = [];
+	table: [],
+	init: function() {
 		var c;
 
 		for (var n = 0; n < 256; n++) {
 			c = n;
 			for (var k = 0; k < 8; k++) {
 				if (c & 1) {
-					c = this.seed ^ (c >> 1);
+					c = this.seed ^ (c >>> 1);
 				} else {
-					c = c >> 1;
+					c = c >>> 1;
 				}	
 			}
-			table[n] = c;
+			c = (c < 0) ? 0xffffffff + c + 1: c;
+			this.table[n] = c;
 		}
-		return table;	
-	}.call(this),
+	},
 	start: function() {
 		this.crc = 0xffffffff;
+		if (this.table.length === 0) {
+			this.init();
+		}
 	},
 	add: function(bytes) {
 		var c = this.crc;
 		var len = bytes.length;
 
 		for (var n = 0; n < len; n++) {
-			c = this.table[(c ^ bytes[n]) & 0xff] ^ (c >> 8);
+			c = this.table[(c ^ bytes[n]) & 0xff] ^ (c >>> 8);
 		}
 		this.crc = c;	
 	},
 	finalize: function() {
-		this.crc = this.crc ^ 0xffffffff;
-		return this.crc;
+		var c = this.crc;
+		c = c ^ 0xffffffff;
+		c = (c < 0) ? 0xffffffff + c + 1: c;
+		this.crc = c;
+		return c;
 	}
 };
+
+crc32.start();
+console.log(crc32.table);
 
 /* png specific from here */
 // these should be methods of a png fsm.
@@ -417,6 +425,7 @@ function match_chunk_data() {
 		this.crc.finalize();
 		this.chunk_data = vb.ref(len);
 		vb.eat(len);
+		console.log("got data " + len + " crc is " + this.crc.crc);
 		return true;
 	}
 	return match(f);
