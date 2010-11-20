@@ -374,7 +374,9 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
 
 function to32(bytes) {
-	return (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
+	var c = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
+	c = (c < 0) ? 0xffffffff + c + 1: c;
+	return c;
 }
 
 // have a fn that just pushes the results onto a stack? not specific names?
