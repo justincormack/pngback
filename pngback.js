@@ -4,6 +4,17 @@ var events = require('events');
 
 var isArray = Array.isArray;
 
+/* Crockford style prototypal inheritence http://javascript.crockford.com/prototypal.html */
+/* use as newObject = Object.create(oldObject); */
+/* alreday in node!
+if (typeof Object.create !== 'function') {
+    Object.create = function (o) {
+        function F() {}
+        F.prototype = o;
+        return new F();
+    };
+} */
+
 // extend eventEmitter to be able to emit an event in a different scope than that of the eventEmitter itself
 events.EventEmitter.prototype.on2 = function(ev, f, scope) {
 	this.on(ev, function() {f.apply(scope, Array.prototype.slice.call(arguments));});
@@ -93,7 +104,12 @@ VBuf.prototype.bytes = function(len) {
 	return bytes;
 };
 
+VBuf.prototype.all = function() {
+	return this.bytes.call(this, this.length);
+};
+
 // little object to store events so we can unlisten easily
+// change to object notation
 function Evstore () {
 	this.listeners = [];
 }
@@ -219,7 +235,7 @@ FSM.prototype.listen = function(emitter, ev) {
 // apply success and fail values
 // would be nice if you didnt have to put in offset. Changing values to undefined would be a way, so undefined does not check...
 // for now making an internal only helper with the offset...
-// should these functions be prototypes of a type of fsm?
+// should these functions be prototypes of a type of fsm? Yes!
 
 // pull out the actual matching op, so we can do stuff in it.
 
@@ -301,9 +317,49 @@ function seq(args) {
 	return g;
 }
 
+/* crc32 - seems like a fairly standard one so not yet namespaced as png */
+var crc32 = {
+	seed: 0xedb88320,
+	crc: 0xffffffff,
+	//inittable: ,
+	table: function() {
+		var table = [];
+		var c;
 
+		for (var n = 0; n < 256; n++) {
+			c = n;
+			for (var k = 0; k < 8; k++) {
+				if (c & 1) {
+					c = this.seed ^ (c >> 1);
+				} else {
+					c = c >> 1;
+				}	
+			}
+			table[n] = c;
+		}
+		return table;	
+	}.call(this),
+	start: function() {
+		this.crc = 0xffffffff;
+	},
+	add: function(bytes) {
+		var c = this.crc;
+		var len = bytes.length;
+
+		for (var n = 0; n < len; n++) {
+			c = this.table[(c ^ bytes[n]) & 0xff] ^ (c >> 8);
+		}
+		this.crc = c;	
+	},
+	finalize: function() {
+		this.crc = this.crc ^ 0xffffffff;
+		return this.crc;
+	}
+};
 
 /* png specific from here */
+// these should be methods of a png fsm.
+// which should also do the setup
 
 // png file signature
 signature = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -312,6 +368,10 @@ signature = [137, 80, 78, 71, 13, 10, 26, 10];
 function to32(bytes) {
 	return (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
 }
+
+// have a fn that just pushes the results onto a stack? not specific names?
+
+var match_signature = accept(signature);
 
 function chunk_len(bytes) {
 	if (bytes[0] & 0x80) { // high bit must not be set
@@ -325,7 +385,49 @@ function chunk_len(bytes) {
 
 var match_chunk_len = get(4, chunk_len);
 
-var match_signature = accept(signature);
+function chunk_type(bytes) {
+	var b;
+	for (var i = 0; i < 4; i++) {
+		b = bytes[i];
+		if (b < 65 || (b > 90 && b < 97) || b > 122) {
+			return false;
+		}
+	}
+	this.chunk_type = bytes;
+	this.crc = Object.create(crc32);
+	this.crc.start();
+	this.crc.add(bytes);
+	return true;
+}
+
+var match_chunk_type = get(4, chunk_type);
+
+// duplicating code here again, need to refactor? chunk_len tied in too much!
+function match_chunk_data() {
+	function f() {
+		len = this.chunk_len;
+		vb = this.vb;
+		if (vb.ended && vb.length < len) { // cannot match as not enough data
+			return false;
+		}
+		if (vb.length < len) {
+			return undefined;
+		}
+		this.crc.add(vb.bytes(len));
+		this.crc.finalize();
+		this.chunk_data = vb.ref(len);
+		vb.eat(len);
+		return true;
+	}
+	return match(f);
+}
+
+function chunk_crc(bytes) {
+	console.log("crc " + (to32(bytes)) + " vs " + this.crc.crc);
+	return (to32(bytes) === this.crc.crc);
+}
+
+var match_chunk_crc = get(4, chunk_crc);
 
 (function(exports) {
 	exports.FSM = FSM;
@@ -335,8 +437,11 @@ var match_signature = accept(signature);
 	exports.accept = accept;
 	exports.match = match;
 	exports.seq = seq;
-	exports.match_chunk_len = match_chunk_len;
 	exports.match_signature = match_signature;
+	exports.match_chunk_len = match_chunk_len;
+	exports.match_chunk_type = match_chunk_type;
+	exports.match_chunk_data = match_chunk_data;
+	exports.match_chunk_crc = match_chunk_crc;
 })(
 
   typeof exports === 'object' ? exports : this
