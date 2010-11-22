@@ -36,13 +36,11 @@ function VBuf() {
 	this.offset = 0;
 	this.length = 0;
 	this.buffers = [];
-	this.total = 0;
 }
 
 VBuf.prototype.data = function(buf) {
 	this.buffers.push(buf);
 	this.length += buf.length;
-	this.total += buf.length;
 };
 	
 VBuf.prototype.eat = function(len) {
@@ -73,7 +71,6 @@ VBuf.prototype.ref = function(len) {
 	trunc.buffers = this.buffers.slice();
 	trunc.offset = this.offset;
 	trunc.length = this.length;
-	trunc.total = this.total;
 	trunc.truncate(len);
 	return trunc;
 };
