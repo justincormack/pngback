@@ -101,7 +101,6 @@ function FSM() {
 	events.EventEmitter.call(this);
 	this.state = null;
 	this.prev = null;
-	this.es = new Evstore();
 	this.transition = false; // fire internal event on transition
 }
 
@@ -113,10 +112,6 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
         enumerable: false
     }
 });
-
-FSM.prototype.finish = function() {
-	// default empty, override eg to unlisten to events. not needed?
-};
 
 // pass the event (but not emitter) to the function
 FSM.prototype.listen = function(emitter, ev) {
@@ -136,12 +131,8 @@ FSM.prototype.listen = function(emitter, ev) {
 			//console.log("internal event state " + fsm.state);
 			fsm.state = fsm.state.call(fsm, 'transition');
 		}
-
-		if (typeof fsm.state !== 'function') {// did not return a function so we are done // kill this?
-			fsm.finish();
-		}
 	}
-	this.es.add(emitter, ev, f);
+	emitter.on(ev, f);
 };
 
 // Functions to match against stream
