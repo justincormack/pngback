@@ -14,17 +14,6 @@ var events = require('events');
 
 var isArray = Array.isArray;
 
-/* Crockford style prototypal inheritence http://javascript.crockford.com/prototypal.html */
-/* use as newObject = Object.create(oldObject); */
-/* alreday in node!
-if (typeof Object.create !== 'function') {
-    Object.create = function (o) {
-        function F() {}
-        F.prototype = o;
-        return new F();
-    };
-} */
-
 // extend eventEmitter to be able to emit an event in a different scope than that of the eventEmitter itself
 events.EventEmitter.prototype.on2 = function(ev, f, scope) {
 	this.on(ev, function() {f.apply(scope, Array.prototype.slice.call(arguments));});
@@ -94,23 +83,8 @@ VBuf.prototype.bytes = function(len) {
 // aha, we want an emitter for each fsm, which the functions get to use
 // should an fsm be a function, so can use it as a component of another fsm? or just evented composition? or can we use functions to compose?
 // also should listen events be constructors?
-/*function FSM() {
-	events.EventEmitter.call(this);
-	this.state = null;
-	this.prev = null;
-	this.transition = false; // fire internal (pseudo) event on transition
-}*/
 
 var FSM = Object.create(events.EventEmitter);
-
-//FSM.super_ = events.EventEmitter;
-
-/*FSM.prototype = Object.create(events.EventEmitter.prototype, {
-    constructor: {
-        value: FSM,
-        enumerable: false
-    }
-});*/
 
 // pass the event (but not emitter) to the function
 FSM.listen = function(emitter, ev) {
