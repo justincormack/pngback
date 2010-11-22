@@ -163,13 +163,13 @@ FSM.prototype.listen = function(emitter, ev) {
 		var args = Array.prototype.slice.call(arguments);
 		args.unshift(ev);
 		fsm.prev = fsm.state;
-		console.log("event " + args[0]);
-		console.log("state " + fsm.state);
+		//console.log("event " + args[0]);
+		//console.log("state " + fsm.state);
 		fsm.state = fsm.state.apply(fsm, args);
 
 		while (fsm.transition === true && typeof fsm.state == 'function' && fsm.state !== fsm.prev) {
 			fsm.prev = fsm.state;
-			console.log("internal event state " + fsm.state);
+			//console.log("internal event state " + fsm.state);
 			fsm.state = fsm.state.call(fsm, 'transition');
 		}
 
@@ -319,9 +319,6 @@ function to32(bytes) {
 
 // merge chunk len and chunk type? or even all 4! That would be more efficient
 function chunk_len(bytes) {
-	
-	console.log("chunking");
-	
 	if (bytes[0] & 0x80) { // high bit must not be set
 		return false;
 	}
@@ -357,9 +354,6 @@ function chunk_data(ev) {
 	if (vb.length < len) {
 		return undefined;
 	}
-	if (len === 0) {
-		console.log("zero len block");
-	}
 	this.crc.add(vb.bytes(len));
 	this.crc.finalize();
 	this.chunk_data = vb.ref(len);
@@ -379,8 +373,6 @@ function succeed() {
 
 
 var pfsm = new FSM();
-
-pfsm.vb = new VBuf();
 
 pfsm.success = function() {
 	console.log(this.filename + " is a png file");
@@ -423,14 +415,12 @@ pfsm.match_eof = function() {
 	return match.call(this, eof, this.success, this.match_chunk_len, this.match_eof, Array.prototype.slice.call(arguments));
 };
 
-
-
-
-pfsm.state = pfsm.match_signature;
 pfsm.transition = true;
 
-pfsm.stream = function(stream) {
+pfsm.init = function(stream) {
+	this.vb = new VBuf();
 	var vb = this.vb;
+	this.state = pfsm.match_signature;
 	stream.on('data', function(buf) {
 		vb.data.call(vb, buf);
 	});

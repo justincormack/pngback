@@ -4,10 +4,10 @@ var events = require('events');
 var fs = require('fs');
 
 function test5(filename, stream) {
-	//var fsm = Object.create(png.pfsm);
-	var fsm = png.pfsm;
+	var fsm = Object.create(png.pfsm);
+	//var fsm = png.pfsm;
 	fsm.filename = filename;
-	fsm.stream(stream);
+	fsm.init(stream);
 	//fsm.on2('finish', sb.finish, sb);
 }
 
