@@ -227,12 +227,15 @@ FSM.prototype.listen = function(emitter, ev) {
 		var args = Array.prototype.slice.call(arguments);
 		args.unshift(ev);
 		fsm.prev = fsm.state;
+		
+		console.log("state " + fsm.state);
 		fsm.state = fsm.state.apply(fsm, args);
 		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
 			fsm.es.finish();
 			fsm.finish();
 		}
 		if (fsm.state !== fsm.prev) { // state change
+			console.log("transition");
 			fsm.transition();
 		}
 		
@@ -251,6 +254,9 @@ FSM.prototype.listen = function(emitter, ev) {
 function match(check) {
 	function g(success, fail) {
 		function f() {
+			console.log("check is " + check);
+			console.log("fail is " + fail);
+			console.log("success is " + success);
 			var ret = check.call(this, this.vb);
 			if (typeof ret == 'undefined') {
 				return g;
@@ -311,6 +317,7 @@ function get(len, check) {
 
 function eof() {
 	function f() {
+		console.log("check end " + this.vb.ended);
 		return this.vb.ended;
 	}
 	return match(f);
@@ -334,15 +341,114 @@ function seq(args) {
 }
 
 // match any number of items, greedy. this version has explicit end function, other variants possible
+/*
+function loop(f, end) {
+	function head(success, fail) {
+		function tail(success, fail) {
+			return f(head, fail);
+		}
+		console.log("head success is " + success);
+		return end(success, tail);
+	}
+
+	return head;
+}*/
+/*
 function loop(f, end) {
 	function g(success, fail) {
 		var head, tail;
-		head = end(success, tail);
-		tail = f(head, fail);
+		function head(success, fail) {
+			return end(success, tail);
+		}
+		function tail(success, fail) {
+			return f(head, fail);
+		}
+		return head(success, fail);
+	}
+	return g;
+} */
+/*
+function loop(f, end) {
+	function g(success, fail) {
+		var h, t;
+	var head = h(success, fail);
+	var tail = t(success, fail);
+	function h(success, fail) {
+		return end(success, tail);
+	}
+	function t(success, fail) {
+		return f(head, fail);
+	}
+	return head;
+}
+return g;
+} */
+/*
+function loop(f, end) {
+	function head(success, fail) {
+		var h, t;
+		function tail(success, fail) {
+			return f(h, fail);
+		}
+		console.log("head success is " + success);
+		return end(success, t);
+		h = head(success, fail);
+		t = tail(success, fail);
+	}
+	return head;
+}
+*/
+/*function loop(f, end) {
+	function g(success, fail) {
+		var h, t;
+		function head(success, fail) {
+			console.log("head success is " + success);
+			return end(success, t);
+		}
+		function tail(success, fail) {
+			return f(h, fail);
+		}
+		h = head(success, fail);
+		t = tail(success, fail);
+		return h;
+	}
+	return g;
+}*/
+/*
+function loop(f, end) {
+	function g(success, fail) {
+		var head, tail;
+		var h = end(success, tail);
+		var t = f(head, fail);
+		function head() {
+			return h;
+		}
+		function tail() {
+			return t;
+		};
 		return head;
 	}
 	return g;
+}*/
+
+// want to return head = end(success, tail) then tail = f(head, fail) and so on
+function loop(f, end) {
+	function g(success, fail) {
+		var l1, l2;
+		head = end(success, l2);
+		tail = f(l1, fail);
+		function l1() {
+			return head;
+		}
+		function l2() {
+			return tail;
+		}
+		return head;
+	}
+	return g;	
 }
+
+
 
 
 /* crc32 - seems like a fairly standard one so not yet namespaced as png */
@@ -414,6 +520,9 @@ var match_signature = accept(signature);
 
 // merge chunk len and chunk type? or even all 4! That would be more efficient
 function chunk_len(bytes) {
+	
+	console.log("chunking");
+	
 	if (bytes[0] & 0x80) { // high bit must not be set
 		return false;
 	}
@@ -469,6 +578,10 @@ function chunk_crc(bytes) {
 	return (to32(bytes) === this.crc.crc);
 }
 
+function succeed() {
+	return true;
+}
+
 var match_chunk_crc = get(4, chunk_crc);
 
 var match_eof = eof(); // surely we can clean this up somehow? had issues before?
@@ -478,9 +591,14 @@ var match_chunk = seq(match_chunk_len, match_chunk_type, match_chunk_data, match
 var match_chunk2 = seq(match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
 
 var c1 = seq(match_chunk_len, match_chunk_type);
-var c2 = seq(match_chunk_data, match_chunk_crc)
-//var match_png = seq(match_signature, match_chunk, match_chunk, loop(match_chunk, match_eof));
-var match_png = seq(match_signature, match_chunk, match_chunk2);
+var c2 = seq(match_chunk_data, match_chunk_crc);
+//var match_png = seq(match_signature, loop(match_chunk, match_eof));
+
+var s1 = get (1, succeed);
+
+var match_png = loop(succeed, match_eof);
+
+//var match_png = seq(match_signature, match_chunk, match_chunk2);
 //var match_png = seq(match_signature, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
 
 
