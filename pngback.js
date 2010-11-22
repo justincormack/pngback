@@ -78,20 +78,6 @@ VBuf.prototype.ref = function(len) {
 	return trunc;
 };
 
-// not sure which fns we need
-VBuf.prototype.head = function() {
-	var offset = this.offset;
-	var buf = 0;
-	if (this.length === 0) {
-		return;
-	}
-	while (this.buffers[buf].length <= offset) {
-		offset = 0;
-		buf++;
-	}
-	return this.buffers[buf][offset];
-};
-
 VBuf.prototype.bytes = function(len) {
 	var offset = this.offset;
 	var bytes = [];
@@ -105,29 +91,6 @@ VBuf.prototype.bytes = function(len) {
 		bytes.push(this.buffers[buf][offset++]);
 	}
 	return bytes;
-};
-
-VBuf.prototype.all = function() {
-	return this.bytes.call(this, this.length);
-};
-
-// little object to store events so we can unlisten easily - do we need to unlisten?
-// change to object notation
-function Evstore () {
-	this.listeners = [];
-}
-
-Evstore.prototype.add = function(emitter, ev, f) {
-	this.listeners.push({'emitter': emitter, 'ev':ev, 'f':f});
-	emitter.on(ev, f);
-};
-
-Evstore.prototype.finish = function() {
-	var e;
-	while (this.listeners.length) {
-		e = this.listeners.pop();
-		e.emitter.removeListener(e.ev, e.f);
-	}	
 };
 
 // FSM. receives events and has an emitter for the state functions to use.
