@@ -200,6 +200,7 @@ function get(len, check) {
 }
 
 // sequence match-type functions
+/*
 function seq(args) {
 	if (! isArray(args)) {
 		args = Array.prototype.slice.call(arguments);
@@ -214,7 +215,7 @@ function seq(args) {
 		return head;
 	}
 	return g;
-}
+} */
 
 /* crc32 - seems like a fairly standard one so not yet namespaced as png */
 var crc32 = {
@@ -261,8 +262,6 @@ var crc32 = {
 	}
 };
 
-crc32.start();
-
 function to32(bytes) {
 	var c = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
 	c = (c < 0) ? 0xffffffff + c + 1: c;
@@ -291,7 +290,6 @@ function chunk_type(bytes) {
 		}
 	}
 	this.chunk_type = bytes;
-	this.crc = Object.create(crc32); // todo: reuse if exists!!
 	this.crc.start();
 	this.crc.add(bytes);
 	return true;
@@ -331,8 +329,6 @@ pfsm.fail = function() {
 	console.log(this.filename + " is not a png file");
 };
 
-//pfsm.chunk = function() {return seq.call(this, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc).call(this, this.eof, this.fail);};
-
 pfsm.match_signature = function() {
 	return match.call(this, accept([137, 80, 78, 71, 13, 10, 26, 10]), this.match_chunk_len, this.fail, this.match_signature, Array.prototype.slice.call(arguments));
 };
@@ -369,8 +365,10 @@ pfsm.transition = true;
 pfsm.init = function(stream) {
 	this.vb = new VBuf();
 	var vb = this.vb;
+	crc32.start(); // initialize table on parent object
+	this.crc = Object.create(crc32);
 	this.state = pfsm.match_signature;
-	stream.on('data', function(buf) { // maybe can remove by working directly with buf here?
+	stream.on('data', function(buf) { // maybe can remove by working directly with buf here not vbuf?
 		vb.data.call(vb, buf);
 	});
 	this.listen(stream, 'data');
@@ -389,7 +387,6 @@ pfsm.init = function(stream) {
 	exports.VBuf = VBuf;
 	exports.accept = accept;
 	exports.match = match;
-	exports.seq = seq;
 	exports.pfsm = pfsm;
 })(
 
