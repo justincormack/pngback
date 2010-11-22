@@ -151,9 +151,8 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
     }
 });
 
-// remove this too?
 FSM.prototype.finish = function() {
-	this.emit('end');
+	// default empty, override eg to unlisten to events. not needed?
 };
 
 // pass the event (but not emitter) to the function
@@ -165,7 +164,9 @@ FSM.prototype.listen = function(emitter, ev) {
 		fsm.prev = fsm.state;
 		//console.log("event " + args[0]);
 		//console.log("state " + fsm.state);
-		fsm.state = fsm.state.apply(fsm, args);
+		if (typeof fsm.state == 'function') {
+			fsm.state = fsm.state.apply(fsm, args);
+		}
 
 		while (fsm.transition === true && typeof fsm.state == 'function' && fsm.state !== fsm.prev) {
 			fsm.prev = fsm.state;
@@ -174,7 +175,6 @@ FSM.prototype.listen = function(emitter, ev) {
 		}
 
 		if (typeof fsm.state !== 'function') {// did not return a function so we are done // kill this?
-			fsm.es.finish();
 			fsm.finish();
 		}
 	}
@@ -337,7 +337,7 @@ function chunk_type(bytes) {
 		}
 	}
 	this.chunk_type = bytes;
-	this.crc = Object.create(crc32); // reuse if exists
+	this.crc = Object.create(crc32); // todo: reuse if exists!!
 	this.crc.start();
 	this.crc.add(bytes);
 	return true;
@@ -366,11 +366,6 @@ function chunk_crc(bytes) {
 	console.log("crc " + (to32(bytes)) + " vs " + this.crc.crc);
 	return (to32(bytes) === this.crc.crc);
 }
-
-function succeed() {
-	return true;
-}
-
 
 var pfsm = new FSM();
 
@@ -421,11 +416,15 @@ pfsm.init = function(stream) {
 	this.vb = new VBuf();
 	var vb = this.vb;
 	this.state = pfsm.match_signature;
-	stream.on('data', function(buf) {
+	stream.on('data', function(buf) { // maybe can remove by working directly with buf here?
 		vb.data.call(vb, buf);
 	});
 	this.listen(stream, 'data');
 	this.listen(stream, 'end');
+	stream.on('end', function() {
+		stream.removeAllListeners('data');
+		stream.removeAllListeners('end');
+	});
 };
 
 
