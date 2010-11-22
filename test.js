@@ -114,7 +114,7 @@ function test5(filename, stream) {
 	fsm.vb = sb.vb;
 	fsm.listen(sb, 'data');
 	fsm.listen(sb, 'end');
-	fsm.on2('finish', sb.finish, sb);
+	//fsm.on2('finish', sb.finish, sb);
 }
 
 //test1();

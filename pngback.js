@@ -8,6 +8,7 @@
 
 // merge all the functions into one big one stops the stupid lack of encapsulation shit, and we can store all the state in the function until we fire event
 
+// how do we sanely detect end of fsm? Specified final state? I like empty fn though.
 
 var events = require('events');
 
@@ -198,7 +199,6 @@ function FSM() {
 	this.prev = null;
 	this.es = new Evstore();
 	this.transition = false; // fire internal event on transition
-	this.start();
 }
 
 FSM.super_ = events.EventEmitter;
@@ -210,16 +210,9 @@ FSM.prototype = Object.create(events.EventEmitter.prototype, {
     }
 });
 
-FSM.prototype.transition = function() {
-	this.emit('transition');
-};
-
-FSM.prototype.start = function() {
-	this.emit('start');
-};
-
+// remove this too?
 FSM.prototype.finish = function() {
-	this.emit('finish');
+	this.emit('end');
 };
 
 // pass the event (but not emitter) to the function
@@ -232,25 +225,17 @@ FSM.prototype.listen = function(emitter, ev) {
 		console.log("event " + args[0]);
 		console.log("state " + fsm.state);
 		fsm.state = fsm.state.apply(fsm, args);
+
+		while (fsm.transition === true && typeof(fsm.state) == 'function' && fsm.state !== fsm.prev) {
+			fsm.prev = fsm.state;
+			console.log("internal event");
+			fsm.state = fsm.state.call(fsm, 'transition');
+		}
+
 		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done // kill this?
 			fsm.es.finish();
 			fsm.finish();
 		}
-		
-		if (fsm.transition === true) {
-			while (fsm.state !== fsm.prev) {
-				fsm.prev = fsm.state;
-				console.log("internal event");
-				fsm.state = fsm.state.call(fsm, 'transition');
-			}
-		}
-		
-		
-		if (fsm.state !== fsm.prev) { // state change
-			console.log("transition");
-			fsm.transition();
-		}
-		
 	}
 	this.es.add(emitter, ev, f);
 };
@@ -462,10 +447,6 @@ function succeed() {
 	return true;
 }
 
-var match_chunk_crc = get(4, chunk_crc);
-
-
-
 
 var pfsm = new FSM();
 
@@ -486,12 +467,12 @@ pfsm.match_chunk_type = function() {return get.call(this, 4, chunk_type)(this.ma
 pfsm.match_chunk_data = function() {return match.call(this, chunk_data)(this.match_chunk_crc, this.fail);};
 pfsm.match_chunk_crc = function() {return get.call(this, 4, chunk_crc)(this.match_eof, this.fail);};
 
-pfsm.match_eof = function() { // use match again!
-	console.log("check end " + this.vb.ended + " avail " + this.vb.length);
-	if (this.vb.length === 0) {
-		return this.match_eof;
+pfsm.match_eof = function(ev) {
+	if (ev === 'end') {
+		return this.success;
 	}
-	return (this.vb.ended) ? this.success : this.match_chunk_len;
+
+	return (this.vb.length === 0) ? this.match_eof : this.match_chunk_len;
 };
 
 
