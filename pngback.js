@@ -54,7 +54,7 @@ VBuf.prototype.eat = function(len) {
 	if (len > this.length) {len = this.length;}
 	this.offset += len;
 	this.length -= len;
-	while (this.offset >= this.buffers[0].length) {
+	while (this.buffers.length !== 0 && this.offset >= this.buffers[0].length) {
 		this.offset -= this.buffers[0].length;
 		this.buffers.shift();
 	}
@@ -140,6 +140,8 @@ Evstore.prototype.finish = function() {
 
 // less clear where we should handle error events etc. also if we should get a stream creation fn and manage the stream ourselves
 // also end event could be handled here
+
+// remove this? use directly?
 function StreamBuffer(stream) {
 	
 	events.EventEmitter.call(this);
@@ -165,13 +167,12 @@ StreamBuffer.prototype = Object.create(events.EventEmitter.prototype, {
 });
 
 StreamBuffer.prototype.levents = ['data', 'end'];
-StreamBuffer.prototype.eevent = 'buffer';
 
 StreamBuffer.prototype.vbfn = function(ev) {
 	var sb = this;
 	return function() {
 		sb.vb[ev].apply(sb.vb, Array.prototype.slice.call(arguments));
-		sb.emit(sb.eevent);
+		sb.emit(ev);
 	};
 };
 
@@ -191,11 +192,12 @@ StreamBuffer.prototype.finish = function() {
 // aha, we want an emitter for each fsm, which the functions get to use
 // should an fsm be a function, so can use it as a component of another fsm? or just evented composition? or can we use functions to compose?
 // also should listen events be constructors?
-function FSM(start) {
+function FSM() {
 	events.EventEmitter.call(this);
-	this.state = start;
+	this.state = null;
 	this.prev = null;
 	this.es = new Evstore();
+	this.transition = false; // fire internal event on transition
 	this.start();
 }
 
@@ -227,13 +229,23 @@ FSM.prototype.listen = function(emitter, ev) {
 		var args = Array.prototype.slice.call(arguments);
 		args.unshift(ev);
 		fsm.prev = fsm.state;
-		
+		console.log("event " + args[0]);
 		console.log("state " + fsm.state);
 		fsm.state = fsm.state.apply(fsm, args);
-		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done
+		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done // kill this?
 			fsm.es.finish();
 			fsm.finish();
 		}
+		
+		if (fsm.transition === true) {
+			while (fsm.state !== fsm.prev) {
+				fsm.prev = fsm.state;
+				console.log("internal event");
+				fsm.state = fsm.state.call(fsm, 'transition');
+			}
+		}
+		
+		
 		if (fsm.state !== fsm.prev) { // state change
 			console.log("transition");
 			fsm.transition();
@@ -252,12 +264,13 @@ FSM.prototype.listen = function(emitter, ev) {
 // pull out the actual matching op, so we can do stuff in it.
 
 function match(check) {
+	var fsm = this;
 	function g(success, fail) {
 		function f() {
 			console.log("check is " + check);
 			console.log("fail is " + fail);
 			console.log("success is " + success);
-			var ret = check.call(this, this.vb);
+			var ret = check.call(fsm, fsm.vb);
 			if (typeof ret == 'undefined') {
 				return g;
 			}
@@ -270,10 +283,12 @@ function match(check) {
 
 // an accept function - matches a list of bytes, as our original match was
 function accept(items) {
+	fsm = this;
 	if (! isArray(items)) {
 		items = [items];
 	}
-	function f(vb) {
+	function f() {
+		vb = fsm.vb;
 		if (vb.ended && vb.length < items.length) { // cannot match as not enough data
 			return false;
 		}
@@ -291,7 +306,7 @@ function accept(items) {
 		}
 		return undefined; // need more data to determine
 	}
-	return match(f);
+	return match.call(this, f);
 }
 
 // general get n bytes, but no checks until end when call check. accept could use, but in some cases good to fail sooner. passes as bytes not vb
@@ -312,15 +327,7 @@ function get(len, check) {
 		}
 		return false;
 	}
-	return match(f);
-}
-
-function eof() {
-	function f() {
-		console.log("check end " + this.vb.ended);
-		return this.vb.ended;
-	}
-	return match(f);
+	return match.call(this, f);
 }
 
 // sequence match-type functions
@@ -339,117 +346,6 @@ function seq(args) {
 	}
 	return g;
 }
-
-// match any number of items, greedy. this version has explicit end function, other variants possible
-/*
-function loop(f, end) {
-	function head(success, fail) {
-		function tail(success, fail) {
-			return f(head, fail);
-		}
-		console.log("head success is " + success);
-		return end(success, tail);
-	}
-
-	return head;
-}*/
-/*
-function loop(f, end) {
-	function g(success, fail) {
-		var head, tail;
-		function head(success, fail) {
-			return end(success, tail);
-		}
-		function tail(success, fail) {
-			return f(head, fail);
-		}
-		return head(success, fail);
-	}
-	return g;
-} */
-/*
-function loop(f, end) {
-	function g(success, fail) {
-		var h, t;
-	var head = h(success, fail);
-	var tail = t(success, fail);
-	function h(success, fail) {
-		return end(success, tail);
-	}
-	function t(success, fail) {
-		return f(head, fail);
-	}
-	return head;
-}
-return g;
-} */
-/*
-function loop(f, end) {
-	function head(success, fail) {
-		var h, t;
-		function tail(success, fail) {
-			return f(h, fail);
-		}
-		console.log("head success is " + success);
-		return end(success, t);
-		h = head(success, fail);
-		t = tail(success, fail);
-	}
-	return head;
-}
-*/
-/*function loop(f, end) {
-	function g(success, fail) {
-		var h, t;
-		function head(success, fail) {
-			console.log("head success is " + success);
-			return end(success, t);
-		}
-		function tail(success, fail) {
-			return f(h, fail);
-		}
-		h = head(success, fail);
-		t = tail(success, fail);
-		return h;
-	}
-	return g;
-}*/
-/*
-function loop(f, end) {
-	function g(success, fail) {
-		var head, tail;
-		var h = end(success, tail);
-		var t = f(head, fail);
-		function head() {
-			return h;
-		}
-		function tail() {
-			return t;
-		};
-		return head;
-	}
-	return g;
-}*/
-
-// want to return head = end(success, tail) then tail = f(head, fail) and so on
-function loop(f, end) {
-	function g(success, fail) {
-		var l1, l2;
-		head = end(success, l2);
-		tail = f(l1, fail);
-		function l1() {
-			return head;
-		}
-		function l2() {
-			return tail;
-		}
-		return head;
-	}
-	return g;	
-}
-
-
-
 
 /* crc32 - seems like a fairly standard one so not yet namespaced as png */
 var crc32 = {
@@ -497,15 +393,6 @@ var crc32 = {
 };
 
 crc32.start();
-//console.log(crc32.table);
-
-/* png specific from here */
-// these should be methods of a png fsm.
-// which should also do the setup
-
-// png file signature
-signature = [137, 80, 78, 71, 13, 10, 26, 10];
-
 
 function to32(bytes) {
 	var c = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
@@ -513,10 +400,7 @@ function to32(bytes) {
 	return c;
 }
 
-// have a fn that just pushes the results onto a stack? not specific names?
-
-var match_signature = accept(signature);
-
+/* png specific from here */
 
 // merge chunk len and chunk type? or even all 4! That would be more efficient
 function chunk_len(bytes) {
@@ -531,8 +415,6 @@ function chunk_len(bytes) {
 	this.chunk_len = len;
 	return true;
 }
-
-var match_chunk_len = get(4, chunk_len);
 
 function chunk_type(bytes) {
 	var b;
@@ -549,29 +431,27 @@ function chunk_type(bytes) {
 	return true;
 }
 
-var match_chunk_type = get(4, chunk_type);
 
 // duplicating code here again, need to refactor? chunk_len tied in too much!
 function chunk_data() {
-	function f() {
-		len = this.chunk_len;
-		vb = this.vb;
-		if (vb.ended && vb.length < len) { // cannot match as not enough data
-			return false;
-		}
-		if (vb.length < len) {
-			return undefined;
-		}
-		this.crc.add(vb.bytes(len));
-		this.crc.finalize();
-		this.chunk_data = vb.ref(len);
-		vb.eat(len);
-		return true;
+	len = this.chunk_len;
+	vb = this.vb;
+	if (vb.ended && vb.length < len) { // cannot match as not enough data
+		return false;
 	}
-	return match(f);
+	if (vb.length < len) {
+		return undefined;
+	}
+	if (len === 0) {
+		console.log("zero len block");
+	}
+	this.crc.add(vb.bytes(len));
+	this.crc.finalize();
+	this.chunk_data = vb.ref(len);
+	vb.eat(len);
+	return true;
 }
 
-var match_chunk_data = chunk_data();
 
 function chunk_crc(bytes) {
 	console.log("crc " + (to32(bytes)) + " vs " + this.crc.crc);
@@ -584,34 +464,49 @@ function succeed() {
 
 var match_chunk_crc = get(4, chunk_crc);
 
-var match_eof = eof(); // surely we can clean this up somehow? had issues before?
 
-//rewrite as one fn!
-var match_chunk = seq(match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
-var match_chunk2 = seq(match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
 
-var c1 = seq(match_chunk_len, match_chunk_type);
-var c2 = seq(match_chunk_data, match_chunk_crc);
-//var match_png = seq(match_signature, loop(match_chunk, match_eof));
 
-var s1 = get (1, succeed);
+var pfsm = new FSM();
 
-var match_png = loop(succeed, match_eof);
+pfsm.success = function() {
+	console.log(this.filename + " is a png file");
+};
 
-//var match_png = seq(match_signature, match_chunk, match_chunk2);
-//var match_png = seq(match_signature, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc);
+pfsm.fail = function() {
+	console.log(this.filename + " is not a png file");
+};
+
+//pfsm.chunk = function() {return seq.call(this, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc).call(this, this.eof, this.fail);};
+
+pfsm.match_signature = function() {return accept.call(this, [137, 80, 78, 71, 13, 10, 26, 10])(this.match_chunk_len, this.fail);};
+
+pfsm.match_chunk_len = function() {return get.call(this, 4, chunk_len)(this.match_chunk_type, this.fail);};
+pfsm.match_chunk_type = function() {return get.call(this, 4, chunk_type)(this.match_chunk_data, this.fail);};
+pfsm.match_chunk_data = function() {return match.call(this, chunk_data)(this.match_chunk_crc, this.fail);};
+pfsm.match_chunk_crc = function() {return get.call(this, 4, chunk_crc)(this.match_eof, this.fail);};
+
+pfsm.match_eof = function() { // use match again!
+	console.log("check end " + this.vb.ended + " avail " + this.vb.length);
+	if (this.vb.length === 0) {
+		return this.match_eof;
+	}
+	return (this.vb.ended) ? this.success : this.match_chunk_len;
+};
+
+
+pfsm.state = pfsm.match_signature;
+pfsm.transition = true;
 
 
 (function(exports) {
 	exports.FSM = FSM;
 	exports.VBuf = VBuf;
 	exports.StreamBuffer = StreamBuffer;
-	exports.signature = signature;
 	exports.accept = accept;
 	exports.match = match;
 	exports.seq = seq;
-	exports.loop = loop;
-	exports.match_png = match_png;
+	exports.pfsm = pfsm;
 })(
 
   typeof exports === 'object' ? exports : this

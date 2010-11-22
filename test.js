@@ -88,13 +88,6 @@ function test2(stream) {
 	
 }
 
-function success() {
-	console.log(this.filename + " is a png file");
-}
-
-function fail() {
-	console.log(this.filename + " is not a png file");
-}
 
 
 
@@ -115,13 +108,12 @@ function test4(filename, stream) {
 }
 
 function test5(filename, stream) {
-	var rec = png.match_png(success, fail);
 	var sb = new png.StreamBuffer(stream);
-	var fsm = new png.FSM(rec);
+	var fsm = png.pfsm;
 	fsm.filename = filename;
 	fsm.vb = sb.vb;
-	fsm.listen(sb, 'buffer');
-	fsm.listen(fsm, 'transition');
+	fsm.listen(sb, 'data');
+	fsm.listen(sb, 'end');
 	fsm.on2('finish', sb.finish, sb);
 }
 
