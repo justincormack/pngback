@@ -31,23 +31,18 @@ events.EventEmitter.prototype.on2 = function(ev, f, scope) {
 };
 
 // data object for node buffers, a vector of buffers
-
+// fix so that is an array of triples: buffer, offset length, not just one offset, length. Fixes edge cases in truncate if then add more... which can do now ended removed
 function VBuf() {
 	this.offset = 0;
 	this.length = 0;
 	this.buffers = [];
 	this.total = 0;
-	this.ended = false;
 }
 
 VBuf.prototype.data = function(buf) {
 	this.buffers.push(buf);
 	this.length += buf.length;
 	this.total += buf.length;
-};
-	
-VBuf.prototype.end = function() {
-	this.ended = true;
 };
 	
 VBuf.prototype.eat = function(len) {
@@ -70,7 +65,6 @@ VBuf.prototype.truncate = function(len) {
 		this.buffers.pop();
 	}
 	this.length = len;
-	this.ended = true;	
 };
 
 VBuf.prototype.ref = function(len) {
@@ -79,7 +73,6 @@ VBuf.prototype.ref = function(len) {
 	trunc.buffers = this.buffers.slice();
 	trunc.offset = this.offset;
 	trunc.length = this.length;
-	trunc.ended = this.ended;
 	trunc.total = this.total;
 	trunc.truncate(len);
 	return trunc;
@@ -118,7 +111,7 @@ VBuf.prototype.all = function() {
 	return this.bytes.call(this, this.length);
 };
 
-// little object to store events so we can unlisten easily
+// little object to store events so we can unlisten easily - do we need to unlisten?
 // change to object notation
 function Evstore () {
 	this.listeners = [];
@@ -135,58 +128,6 @@ Evstore.prototype.finish = function() {
 		e = this.listeners.pop();
 		e.emitter.removeListener(e.ev, e.f);
 	}	
-};
-
-// StreamBuffer handles the events and streams, creates VBuf to store data
-
-// less clear where we should handle error events etc. also if we should get a stream creation fn and manage the stream ourselves
-// also end event could be handled here
-
-// remove this? use directly?
-function StreamBuffer(stream) {
-	
-	events.EventEmitter.call(this);
-		
-	this.vb = new VBuf();
-	this.es = new Evstore();
-	
-	this.stream = stream;
-	
-	this.levents.map(this.evfn, this);
-	
-	//console.log(this);
-	//console.log("after create");
-}
-
-StreamBuffer.super_ = events.EventEmitter;
-
-StreamBuffer.prototype = Object.create(events.EventEmitter.prototype, {
-    constructor: {
-        value: StreamBuffer,
-        enumerable: false
-    }
-});
-
-StreamBuffer.prototype.levents = ['data', 'end'];
-
-StreamBuffer.prototype.vbfn = function(ev) {
-	var sb = this;
-	return function() {
-		sb.vb[ev].apply(sb.vb, Array.prototype.slice.call(arguments));
-		sb.emit(ev);
-	};
-};
-
-StreamBuffer.prototype.evfn = function(ev) {
-	this.es.add(this.stream, ev, this.vbfn(ev));
-};
-
-// not sure our use of finish here is quite consistent
-StreamBuffer.prototype.finish = function() {
-	//console.log(this);
-	this.es.finish();
-	delete this.vb;
-	this.stream.destroy();
 };
 
 // FSM. receives events and has an emitter for the state functions to use.
@@ -226,13 +167,13 @@ FSM.prototype.listen = function(emitter, ev) {
 		console.log("state " + fsm.state);
 		fsm.state = fsm.state.apply(fsm, args);
 
-		while (fsm.transition === true && typeof(fsm.state) == 'function' && fsm.state !== fsm.prev) {
+		while (fsm.transition === true && typeof fsm.state == 'function' && fsm.state !== fsm.prev) {
 			fsm.prev = fsm.state;
-			console.log("internal event");
+			console.log("internal event state " + fsm.state);
 			fsm.state = fsm.state.call(fsm, 'transition');
 		}
 
-		if (typeof(fsm.state) !== 'function') {// did not return a function so we are done // kill this?
+		if (typeof fsm.state !== 'function') {// did not return a function so we are done // kill this?
 			fsm.es.finish();
 			fsm.finish();
 		}
@@ -248,35 +189,24 @@ FSM.prototype.listen = function(emitter, ev) {
 
 // pull out the actual matching op, so we can do stuff in it.
 
-function match(check) {
-	var fsm = this;
-	function g(success, fail) {
-		function f() {
-			console.log("check is " + check);
-			console.log("fail is " + fail);
-			console.log("success is " + success);
-			var ret = check.call(fsm, fsm.vb);
-			if (typeof ret == 'undefined') {
-				return g;
-			}
-			return (ret === true) ? success : fail;
-		}
-		return f;
+function match(check, success, fail, again, args) {
+	var ret = check.apply(this, args);
+	if (typeof ret == 'undefined') {
+		return again;
 	}
-	return g;
+	return (ret === true) ? success : fail;
 }
 
 // an accept function - matches a list of bytes, as our original match was
 function accept(items) {
-	fsm = this;
 	if (! isArray(items)) {
 		items = [items];
 	}
-	function f() {
-		vb = fsm.vb;
-		if (vb.ended && vb.length < items.length) { // cannot match as not enough data
+	function f(ev) {
+		if (ev === 'end') {
 			return false;
 		}
+		var vb = this.vb;
 		var canmatch = (items.length > vb.length) ? vb.length: items.length;
 		//canmatch = 1;
 		var bytes = vb.bytes(canmatch);
@@ -291,16 +221,16 @@ function accept(items) {
 		}
 		return undefined; // need more data to determine
 	}
-	return match.call(this, f);
+	return f;
 }
 
 // general get n bytes, but no checks until end when call check. accept could use, but in some cases good to fail sooner. passes as bytes not vb
 function get(len, check) {
-	function f() {
-		vb = this.vb;
-		if (vb.ended && vb.length < len) { // cannot match as not enough data
+	function f(ev) {
+		if (ev === 'end') {
 			return false;
 		}
+		var vb = this.vb;
 		if (vb.length < len) {
 			return undefined;
 		}
@@ -312,7 +242,7 @@ function get(len, check) {
 		}
 		return false;
 	}
-	return match.call(this, f);
+	return f;
 }
 
 // sequence match-type functions
@@ -410,7 +340,7 @@ function chunk_type(bytes) {
 		}
 	}
 	this.chunk_type = bytes;
-	this.crc = Object.create(crc32);
+	this.crc = Object.create(crc32); // reuse if exists
 	this.crc.start();
 	this.crc.add(bytes);
 	return true;
@@ -418,12 +348,12 @@ function chunk_type(bytes) {
 
 
 // duplicating code here again, need to refactor? chunk_len tied in too much!
-function chunk_data() {
-	len = this.chunk_len;
-	vb = this.vb;
-	if (vb.ended && vb.length < len) { // cannot match as not enough data
+function chunk_data(ev) {
+	if (ev === 'end') {
 		return false;
 	}
+	len = this.chunk_len;
+	vb = this.vb;
 	if (vb.length < len) {
 		return undefined;
 	}
@@ -450,6 +380,8 @@ function succeed() {
 
 var pfsm = new FSM();
 
+pfsm.vb = new VBuf();
+
 pfsm.success = function() {
 	console.log(this.filename + " is a png file");
 };
@@ -460,30 +392,58 @@ pfsm.fail = function() {
 
 //pfsm.chunk = function() {return seq.call(this, match_chunk_len, match_chunk_type, match_chunk_data, match_chunk_crc).call(this, this.eof, this.fail);};
 
-pfsm.match_signature = function() {return accept.call(this, [137, 80, 78, 71, 13, 10, 26, 10])(this.match_chunk_len, this.fail);};
-
-pfsm.match_chunk_len = function() {return get.call(this, 4, chunk_len)(this.match_chunk_type, this.fail);};
-pfsm.match_chunk_type = function() {return get.call(this, 4, chunk_type)(this.match_chunk_data, this.fail);};
-pfsm.match_chunk_data = function() {return match.call(this, chunk_data)(this.match_chunk_crc, this.fail);};
-pfsm.match_chunk_crc = function() {return get.call(this, 4, chunk_crc)(this.match_eof, this.fail);};
-
-pfsm.match_eof = function(ev) {
-	if (ev === 'end') {
-		return this.success;
-	}
-
-	return (this.vb.length === 0) ? this.match_eof : this.match_chunk_len;
+pfsm.match_signature = function() {
+	return match.call(this, accept([137, 80, 78, 71, 13, 10, 26, 10]), this.match_chunk_len, this.fail, this.match_signature, Array.prototype.slice.call(arguments));
 };
+
+pfsm.match_chunk_len = function() {
+	return match.call(this, get(4, chunk_len), this.match_chunk_type, this.fail, this.match_chunk_len, Array.prototype.slice.call(arguments));
+};
+
+pfsm.match_chunk_type = function() {
+	return match.call(this, get(4, chunk_type), this.match_chunk_data, this.fail, this.match_chunk_type, Array.prototype.slice.call(arguments));
+};
+	
+pfsm.match_chunk_data = function() {
+	return match.call(this, chunk_data, this.match_chunk_crc, this.fail, this.match_chunk_data, Array.prototype.slice.call(arguments));
+};
+	
+pfsm.match_chunk_crc = function() {
+	return match.call(this, get(4, chunk_crc), this.match_eof, this.fail, this.match_chunk_crc, Array.prototype.slice.call(arguments));
+};
+
+function eof(ev) {
+	if (ev === 'end') {
+		return true;
+	}
+	return (this.vb.length === 0) ? undefined : false;
+}
+
+pfsm.match_eof = function() {
+	return match.call(this, eof, this.success, this.match_chunk_len, this.match_eof, Array.prototype.slice.call(arguments));
+};
+
+
 
 
 pfsm.state = pfsm.match_signature;
 pfsm.transition = true;
 
+pfsm.stream = function(stream) {
+	var vb = this.vb;
+	stream.on('data', function(buf) {
+		vb.data.call(vb, buf);
+	});
+	this.listen(stream, 'data');
+	this.listen(stream, 'end');
+};
+
+
+
 
 (function(exports) {
 	exports.FSM = FSM;
 	exports.VBuf = VBuf;
-	exports.StreamBuffer = StreamBuffer;
 	exports.accept = accept;
 	exports.match = match;
 	exports.seq = seq;
