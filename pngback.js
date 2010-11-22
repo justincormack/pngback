@@ -94,24 +94,26 @@ VBuf.prototype.bytes = function(len) {
 // aha, we want an emitter for each fsm, which the functions get to use
 // should an fsm be a function, so can use it as a component of another fsm? or just evented composition? or can we use functions to compose?
 // also should listen events be constructors?
-function FSM() {
+/*function FSM() {
 	events.EventEmitter.call(this);
 	this.state = null;
 	this.prev = null;
-	this.transition = false; // fire internal event on transition
-}
+	this.transition = false; // fire internal (pseudo) event on transition
+}*/
 
-FSM.super_ = events.EventEmitter;
+var FSM = Object.create(events.EventEmitter);
 
-FSM.prototype = Object.create(events.EventEmitter.prototype, {
+//FSM.super_ = events.EventEmitter;
+
+/*FSM.prototype = Object.create(events.EventEmitter.prototype, {
     constructor: {
         value: FSM,
         enumerable: false
     }
-});
+});*/
 
 // pass the event (but not emitter) to the function
-FSM.prototype.listen = function(emitter, ev) {
+FSM.listen = function(emitter, ev) {
 	var fsm = this;
 	function f() {
 		var args = Array.prototype.slice.call(arguments);
@@ -316,7 +318,7 @@ function chunk_crc(bytes) {
 	return (to32(bytes) === this.crc.crc);
 }
 
-var pfsm = new FSM();
+var pfsm = Object.create(FSM);
 
 pfsm.success = function() {
 	console.log(this.filename + " is a png file");
