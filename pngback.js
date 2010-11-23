@@ -24,7 +24,7 @@ events.EventEmitter.prototype.on2 = function(ev, f, scope) {
 
 // data object for node buffers, a vector of buffers
 // fix so that is an array of triples: buffer, offset length, not just one offset, length. Fixes edge cases in truncate if then add more... which can do now ended removed
-// hmm, without init all get same buffer!
+// hmm, without init all get same buffer! should we make create for our objects?
 
 var vbuf = {
 	init: function() {
@@ -88,10 +88,15 @@ var vbuf = {
 // should an fsm be a function, so can use it as a component of another fsm? or just evented composition? or can we use functions to compose?
 // also should listen events be constructors?
 
-emitter = new events.EventEmitter; // need to init to make this work.
+// barely need this. eg for second stage, could make own just as easily, as would quite like diff fns for diff events. And without self transition is just ev handler!
+// needs to do own unlistens
+// could just turn into some helper fns, one to do cascade, one for unlistens, although listen fn that listens for all events on streams is sane
+
+emitter = new events.EventEmitter(); // need to init to make this work.
 var FSM = Object.create(emitter);
 
 // pass the event (but not emitter) to the function
+// redo this to just pass emitter? we know then which events we need to listen to
 FSM.listen = function(emitter, ev) {
 	var fsm = this;
 	function f() {
@@ -367,14 +372,16 @@ pfsm.init = function(stream) {
 	});
 };
 
-// next layer is chunk ordering constraints
+// next layer is chunk ordering constraints, and chunk behaviour
 
-cfsm = Object.create(FSM);
+var cfsm = Object.create(emitter); // no need to inherit from FSM!
 
 // PNG standard information
-cfsm.criticalChunks = ['IHDR', 'PLTE', 'IDAT', 'IEND'];
-cfsm.ancillaryChunks = ['cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
-cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
+//cfsm.criticalChunks = ['IHDR', 'PLTE', 'IDAT', 'IEND'];
+//cfsm.ancillaryChunks = ['cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
+//cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
+cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND'];
+
 cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appear once, so enforce. prob can simplify table
 	IHDR: "1",
 	PLTE: "?",
@@ -396,19 +403,17 @@ cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appea
 	tEXt: "*",
 	zTXt: "*"
 };
-cfsm.next = { // functions of currently allowed set and already used counts, almost table driven state machine
-	// note that can return items that can be used once only - another check will remove these
-	// do these need to be functions?
-	IHDR: function(a, u) {
+cfsm.states = { // functions that are called in each state, return the allowable states (these will be checked for if only allowed once)
+	IHDR: function() {
 		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'IDAT', 'PLTE'];
 	},
-	PLTE: function(a, u) {
+	PLTE: function() {
 		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'tRNS', 'hIST', 'bKGD', 'IDAT'];
 	},
-	IDAT: function(a, u) {
+	IDAT: function() {
 		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'IDAT', 'IEND'];
 	},
-	IEND: function(a, u) {
+	IEND: function() {
 		return [];
 	},
 		
@@ -427,10 +432,66 @@ cfsm.next = { // functions of currently allowed set and already used counts, alm
 		"tEXt": "*",
 		"zTXt": "*"
 };
-cfsm.states = {
-	//IHDR: function
+
+cfsm.finish = function() {
+	//cleanup listeners?
 };
+cfsm.error = function(msg) {
+	console.log(msg);
+	this.finish(); // not sure need this here?
+	this.emit('error');
+	return;
+};
+cfsm.end = function () {
+	if (this.available.length !== 0) {
+		return this.error("unexpected end of stream");
+	}
+	this.emit('end');
+};
+
+cfsm.bytesToString = function(bytes) {
+	return String.fromCharCode(bytes[0]) + String.fromCharCode(bytes[1]) + String.fromCharCode(bytes[2]) + String.fromCharCode(bytes[3]);
+};
+
+cfsm.chunk = function(type, data) {
+	var name = this.bytesToString(type);
+	
+	if (this.chunks.indexOf(name) === -1) {
+		return this.error("unknown chunk type " + name + " not yet handled"); // need to add unknown chunk handlers
+	}
+	
+	if (this.available.indexOf(name) === -1) {
+		return this.error("chunk " + name + " not allowed here");
+	}
+	
+	var rep = this.rep[name];
+	var used = this.used[name];
+	if (typeof used !== 'number') {
+		used = 0;
+	}
+	
+	if ((rep === '1' || rep === '?') && used !== 0) {
+		return this.error("chunk " + name + " repeated illegally");
+	}
+	
+	this.used[name] = used + 1;
+	
+	// ok we are looking good to go
+	
+	if (typeof this.states[name] !== 'function') {
+		return this.error("chunk " + name + " has no handler");
+	}
+	
+	this.available = this.states[name].call(this);
+};
+
 cfsm.used = {};
+cfsm.available = ['IHDR'];
+cfsm.listen = function(emitter) { // change fsm to work like this? ie dont pass the events let us choose
+	var cfsm = this;
+	emitter.on('end', function () {cfsm.end.call(cfsm);});
+	emitter.on('chunk', function (type, data) {cfsm.chunk.call(cfsm, type, data);});
+};
 
 
 (function(exports) {
@@ -439,6 +500,7 @@ cfsm.used = {};
 	exports.accept = accept;
 	exports.match = match;
 	exports.pfsm = pfsm;
+	exports.cfsm = cfsm;
 })(
 
   typeof exports === 'object' ? exports : this
