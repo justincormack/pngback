@@ -301,7 +301,6 @@ function chunk_data(ev) {
 
 
 function chunk_crc(bytes) {
-	console.log("crc " + (to32(bytes)) + " vs " + this.crc.crc);
 	if ((to32(bytes) !== this.crc.crc)) {
 		return false;
 	}
