@@ -64,6 +64,8 @@ var vbuf = {
 		// return a truncated vbuf object, can be used to store a reference to the front of stream
 		var trunc = Object.create(this);
 		trunc.buffers = this.buffers.slice(); // need to clone the buffers
+		trunc.offset = this.offset;
+		trunc.length = this.length;
 		trunc.truncate(len);
 		return trunc;
 	},
@@ -390,7 +392,6 @@ var cfsm = Object.create(emitter); // no need to inherit from FSM!
 //cfsm.ancillaryChunks = ['cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
 cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
 
-
 cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appear once, so enforce. prob can simplify table
 	IHDR: "1",
 	PLTE: "?",
@@ -412,33 +413,41 @@ cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appea
 	tEXt: "*",
 	zTXt: "*"
 };
+// may need to store elsewhere as will be used by construct too
+cfsm.parse = {
+	IHDR: ['width', 'uint32', 'height', 'uint32', 'bitDepth', 'uint8', 'colourType', 'uint8', 'compression', 'uint8', 'filter', 'uint8', 'interlace', 'uint8'],
+	gAMA: ['gamma', 'uint32']
+};
 cfsm.groups = {
 	initial: ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'IDAT', 'PLTE']
 };
 cfsm.parseField = function(data, fields) {
 	var bytes = data.bytes(data.length);
-	var f;
-	var ret = [];
-	if (typeof fields == 'string') {
-		fields = [fields];
-	}
-	while(fields.length > 0) {
-		var f = fields.shift();
-		switch (f) {
+	var type;
+	var name;
+	var ret = {};
+	var fs = fields.slice();
+	
+	while(fs.length > 0) {
+		name = fs.shift();
+		type = fs.shift();
+		switch (type) {
 			case 'uint32':
 				if (bytes.length < 4) {
 					return this.error("not enough data");
 				}
-				ret.push(to32(bytes));
+				ret[name] = to32(bytes);
 				bytes = bytes.slice(4);
 			break;
 			case 'uint8':
 				if (bytes.length < 1) {
 					return this.error("not enough data");
 				}
-				ret.push(bytes[0]);
+				ret[name] = bytes[0];
 				bytes.shift();
 			break;
+			default:
+				return this.error("cannot understand field parse");
 		}
 	}
 	if (bytes.length !== 0) {
@@ -448,6 +457,53 @@ cfsm.parseField = function(data, fields) {
 };
 cfsm.states = { // functions that are called in each state, return the allowable states (these will be checked for if only allowed once)
 	IHDR: function(data) {
+		var d = this.parseField(data, this.parse.IHDR);
+		if (typeof d == 'undefined') {return;}
+
+		if (d.width === 0 || d.height === 0) {
+			return this.error("width and height of PNG must not be zero");
+		}
+
+		if ([1, 2, 4, 8, 16].indexOf(d.bitDepth) === -1) {
+			return this.error("invalid bit depth");
+		}
+
+		switch(d.colourType) {
+			case 0: // greyscale
+				break;
+			case 2: // truecolour
+			case 4: // greyscale with alpha
+			case 6: // truecolour with alpha
+				if (d.bitDepth < 8) {
+					return this.error("invalid bit depth");
+				}
+				break;
+			case 3: // indexed colour
+				if (d.bitDepth > 8) {
+					return this.error("invalid bit depth");
+				}
+				break;
+			default:
+				return this.error("invalid colour type");
+		}
+
+		if (d.compression !== 0) {
+			return this.error("invalid compression type");
+		}
+		
+		if (d.filter !== 0) {
+			return this.error("invalid filter type");
+		}
+		
+		if (d.filter !== 0 && d.filter !== 1) {
+			return this.error("invalid interlace type");
+		}
+		
+		this.header = d; // other chunks need to see this header
+		
+		this.emit('IHDR', d);
+		console.log("header " + d);
+		
 		return this.groups.initial;
 	},
 	PLTE: function(data) {
@@ -462,12 +518,13 @@ cfsm.states = { // functions that are called in each state, return the allowable
 		
 		"cHRM": "?",
 	gAMA: function(data) {
-		var gamma = this.parseField(data, 'uint32'); // these params can be stored in table
-		if (typeof gamma == 'undefined') {
-			return;
-		}
-		this.emit('gAMA', gamma / 100000);
-		console.log("gamma " + gamma / 100000);
+		var d = this.parseField(data, this.parse.gAMA);
+		if (typeof d == 'undefined') {return;}
+		
+		d.gamma = d.gamma / 1000000;
+		
+		this.emit('gAMA', d);
+		console.log("gamma " + d.gamma);
 		
 		return this.groups.initial;
 	},
