@@ -8,8 +8,9 @@
 
 // merge all the functions into one big one stops the stupid lack of encapsulation shit, and we can store all the state in the function until we fire event
 
-// cant do what we wanted and cleanup to not use vbuf now, as functions not clean any more, too entangled in match
+// cant do what we wanted and cleanup to not use vbuf now, as functions not clean any more, too entangled in match. will redo
 
+// dont make objects reusble - ie no init methods. Make a new one for a new operation. Create prototypes in right state
 
 var events = require('events');
 
@@ -234,6 +235,8 @@ var crc32 = {
 	}
 };
 
+crc32.start(); // initialize table on parent object
+
 function to32(bytes) {
 	var c = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
 	c = (c < 0) ? 0xffffffff + c + 1: c;
@@ -334,10 +337,12 @@ pfsm.match_eof = function() {
 
 pfsm.transition = true;
 
+// some sort of compositional method for putting these together would be nice. Look for methods, etc.
+
+// remove init fn - just put in starting state and allow clone, as far as is possible anyway
 pfsm.init = function(stream) {
 	this.vb = new VBuf();
 	var vb = this.vb;
-	crc32.start(); // initialize table on parent object
 	this.crc = Object.create(crc32);
 	this.state = pfsm.match_signature;
 	stream.on('data', function(buf) { // maybe can remove by working directly with buf here not vbuf?
@@ -351,6 +356,65 @@ pfsm.init = function(stream) {
 	});
 };
 
+// next layer is chunk ordering constraints
+
+cfsm = Object.create(FSM);
+
+// PNG standard information
+cfsm.criticalChunks = ['IHDR', 'PLTE', 'IDAT', 'IEND'];
+cfsm.ancillaryChunks = ['cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
+cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
+cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appear once, so enforce. prob can simplify table
+	IHDR: "1",
+	PLTE: "?",
+	IDAT: "+",
+	IEND: "1",
+	
+	cHRM: "?",
+	gAMA: "?",
+	iCCP: "?", // only one of sRGB and iCCP so modify if one found or handle in state
+	sRGB: "?", // only one of sRGB and iCCP so modify if one found or handle in state
+	sBIT: "?",
+	bKGD: "?",
+	hIST: "?", // not allowed until we get PLTE but this handled in states
+	tRNS: "?", // not allowed until we get PLTE but this handled in states
+	pHYs: "?",
+	sPLT: "*",
+	tIME: "?",
+	iTXt: "*",
+	tEXt: "*",
+	zTXt: "*"
+};
+cfsm.next: { // functions of currently allowed set and already used counts, almost table driven state machine
+	// note that can return items that can be used once only - another check will remove these
+	IHDR: function(a, u) {
+		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'IDAT', 'PLTE']);
+	},
+	PLTE: function(a, u) {
+		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'tRNS', 'hIST', 'bKGD', 'IDAT'];
+	},
+	IDAT: function(a, u) {
+		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'IDAT', 'IEND'];
+	},
+	IEND: function(a, u) {
+		return [];
+	},
+		
+		"cHRM": "?",
+		"gAMA": "?",
+		"iCCP": "?",
+		"sRGB": "?",
+		"sBIT": "?",
+		"bKGD": "?",
+		"hIST": "?",
+		"tRNS": "?",
+		"pHYs": "?",
+		"sPLT": "*",
+		"tIME": "?",
+		"iTXt": "*",
+		"tEXt": "*",
+		"zTXt": "*"
+};
 
 
 
