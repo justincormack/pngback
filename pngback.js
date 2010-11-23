@@ -308,6 +308,15 @@ function chunk_crc(bytes) {
 	return true;
 }
 
+
+// maybe the pfsm should also pass a reference to the vbuffer of the whole chunk, in case want to send through unchanged.
+// not just the data part, as after all if that is not changed we do not need to eg recalculate crc
+// for some apps of course just want to drop original data
+// and for test roundtripping good
+// easier to do with one chunk fn!
+// and makes that fn easier to write, just builds vbuf from data, so can still use it, needs to keep in closure
+// then data is another vbuff view of same vbuf?
+
 var pfsm = Object.create(FSM);
 
 pfsm.success = function() {
@@ -379,8 +388,8 @@ var cfsm = Object.create(emitter); // no need to inherit from FSM!
 // PNG standard information
 //cfsm.criticalChunks = ['IHDR', 'PLTE', 'IDAT', 'IEND'];
 //cfsm.ancillaryChunks = ['cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
-//cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
-cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND'];
+cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
+
 
 cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appear once, so enforce. prob can simplify table
 	IHDR: "1",
@@ -403,22 +412,65 @@ cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appea
 	tEXt: "*",
 	zTXt: "*"
 };
+cfsm.groups = {
+	initial: ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'IDAT', 'PLTE']
+};
+cfsm.parseField = function(data, fields) {
+	var bytes = data.bytes(data.length);
+	var f;
+	var ret = [];
+	if (typeof fields == 'string') {
+		fields = [fields];
+	}
+	while(fields.length > 0) {
+		var f = fields.shift();
+		switch (f) {
+			case 'uint32':
+				if (bytes.length < 4) {
+					return this.error("not enough data");
+				}
+				ret.push(to32(bytes));
+				bytes = bytes.slice(4);
+			break;
+			case 'uint8':
+				if (bytes.length < 1) {
+					return this.error("not enough data");
+				}
+				ret.push(bytes[0]);
+				bytes.shift();
+			break;
+		}
+	}
+	if (bytes.length !== 0) {
+		return this.error("too much data");
+	}
+	return ret;
+};
 cfsm.states = { // functions that are called in each state, return the allowable states (these will be checked for if only allowed once)
-	IHDR: function() {
-		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'IDAT', 'PLTE'];
+	IHDR: function(data) {
+		return this.groups.initial;
 	},
-	PLTE: function() {
+	PLTE: function(data) {
 		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'tRNS', 'hIST', 'bKGD', 'IDAT'];
 	},
-	IDAT: function() {
+	IDAT: function(data) {
 		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'IDAT', 'IEND'];
 	},
-	IEND: function() {
+	IEND: function(data) {
 		return [];
 	},
 		
 		"cHRM": "?",
-		"gAMA": "?",
+	gAMA: function(data) {
+		var gamma = this.parseField(data, 'uint32'); // these params can be stored in table
+		if (typeof gamma == 'undefined') {
+			return;
+		}
+		this.emit('gAMA', gamma / 100000);
+		console.log("gamma " + gamma / 100000);
+		
+		return this.groups.initial;
+	},
 		"iCCP": "?",
 		"sRGB": "?",
 		"sBIT": "?",
@@ -456,6 +508,8 @@ cfsm.bytesToString = function(bytes) {
 cfsm.chunk = function(type, data) {
 	var name = this.bytesToString(type);
 	
+	console.log("see chunk: " + name);
+	
 	if (this.chunks.indexOf(name) === -1) {
 		return this.error("unknown chunk type " + name + " not yet handled"); // need to add unknown chunk handlers
 	}
@@ -482,7 +536,13 @@ cfsm.chunk = function(type, data) {
 		return this.error("chunk " + name + " has no handler");
 	}
 	
-	this.available = this.states[name].call(this);
+	var ret = this.states[name].call(this, data);
+	
+	if (typeof ret === 'undefined') {
+		return; // some error in chunk eg bad data
+	}
+	
+	this.available = ret;
 };
 
 cfsm.used = {};
