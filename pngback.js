@@ -8,7 +8,8 @@
 
 // merge all the functions into one big one stops the stupid lack of encapsulation shit, and we can store all the state in the function until we fire event
 
-// how do we sanely detect end of fsm? Specified final state? I like empty fn though.
+// cant do what we wanted and cleanup to not use vbuf now, as functions not clean any more, too entangled in match
+
 
 var events = require('events');
 
@@ -110,16 +111,14 @@ FSM.listen = function(emitter, ev) {
 
 // Functions to match against stream
 // apply success and fail values
-// would be nice if you didnt have to put in offset. Changing values to undefined would be a way, so undefined does not check...
-// for now making an internal only helper with the offset...
-// should these functions be prototypes of a type of fsm? Yes!
-
-// pull out the actual matching op, so we can do stuff in it.
 
 function match(check, success, fail, again, args) {
 	var ret = check.apply(this, args);
 	if (typeof ret == 'undefined') {
 		return again;
+	}
+	if (typeof ret == 'function') {
+		return ret;
 	}
 	return (ret === true) ? success : fail;
 }
