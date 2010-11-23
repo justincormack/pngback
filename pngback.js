@@ -545,9 +545,13 @@ cfsm.chunk = function(type, data) {
 	this.available = ret;
 };
 
-cfsm.used = {};
-cfsm.available = ['IHDR'];
+
+// this is basically the init fn!
 cfsm.listen = function(emitter) { // change fsm to work like this? ie dont pass the events let us choose
+	//general init
+	this.used = {};
+	this.available = ['IHDR'];
+	
 	var cfsm = this;
 	emitter.on('end', function () {cfsm.end.call(cfsm);});
 	emitter.on('chunk', function (type, data) {cfsm.chunk.call(cfsm, type, data);});
