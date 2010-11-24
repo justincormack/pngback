@@ -661,6 +661,14 @@ cfsm.bKGD = {
 		this.unavailable('bKGD');
 	}
 };
+cfsm.cHRM = {
+	parse: ['whiteX', 'float100k', 'whiteY', 'float100k', 'redX', 'float100k', 'redY', 'float100k', 'greenX', 'float100k', 'greenY', 'float100k', 'blueX', 'float100k', 'blueY', 'float100k'],
+	state: function(d) {
+		this.emit('cHRM', d);
+		
+		this.unavailable('cHRM');
+	}
+};
 
 cfsm.finish = function() {
 	//cleanup listeners?
