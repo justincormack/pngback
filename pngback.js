@@ -437,19 +437,26 @@ cfsm.parseField = function(data, fields) {
 		name = fs.shift();
 		type = fs.shift();
 		switch (type) {
-			case 'uint32':
-				if (bytes.length < 4) {
-					return "not enough data";
-				}
-				ret[name] = to32(bytes);
-				bytes = bytes.slice(4);
-			break;
 			case 'uint8':
 				if (bytes.length < 1) {
 					return "not enough data";
 				}
 				ret[name] = bytes[0];
 				bytes.shift();
+			break;
+			case 'uint16':
+				if (bytes.length < 2) {
+					return "not enough data";
+				}
+				ret[name] = bytes[1] + 256 * bytes[0];
+				bytes = bytes.slice(2);
+			break;
+			case 'uint32':
+				if (bytes.length < 4) {
+					return "not enough data";
+				}
+				ret[name] = to32(bytes);
+				bytes = bytes.slice(4);
 			break;
 			case 'rgb':
 				if (bytes.length % 3 !== 0) {
@@ -618,6 +625,40 @@ cfsm.sBIT = {
 		this.emit('sBIT', d);
 		
 		this.unavailable('sBIT');
+	}
+};
+cfsm.bKGD = {
+	parse: function(data) {
+	var p;
+		switch (this.header.type) {
+			case 0:
+			case 4:
+				p = ["grey", "uint16"];
+				break;
+			case 2:
+			case 6:
+				p = ["red", "uint16", "green", "uint16", "blue", "uint16"];
+				break;
+			case 3:
+				p = ["palette", "uint8"];
+				break;
+		}
+		return this.parseField(data, p);
+	},
+	validate: function(d) {
+		var max = 1 << ((this.header.type === 3) ? 8 : this.header.depth);
+		var keys = Object.keys(d);
+		for (var i = 0; i < keys.length; i++) {
+			if (d[keys[i]] >= max) {
+				return "invalid background colour " + d[keys[i]] + " max " + max;
+			}
+		}
+		return;
+	},
+	state: function(d) {
+		this.emit('bKGD', d);
+		
+		this.unavailable('bKGD');
 	}
 };
 

@@ -10,6 +10,9 @@ function test5(filename, stream) {
 	cfsm.listen(pfsm);
 	
 	pfsm.filename = filename;
+	
+	console.log("starting " + filename);
+	
 	pfsm.init(stream);
 	//fsm.on2('finish', sb.finish, sb);
 }
