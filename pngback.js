@@ -13,6 +13,8 @@
 
 // dont make objects reusble - ie no init methods. Make a new one for a new operation. Create prototypes in right state
 
+// note on output validate should first check if fits in parse range
+
 var events = require('events');
 
 var isArray = Array.isArray;
@@ -698,7 +700,7 @@ cfsm.pHYs = {
 	}
 };
 cfsm.hIST = {
-	parse: ["frequencies", "freq"],
+	parse: ['frequencies', 'freq'],
 	validate: function(d) {
 		if (d.frequencies.length !== this.paletteLength) {
 			return "Number of items in histogram not same is in palette";
@@ -708,6 +710,23 @@ cfsm.hIST = {
 		this.emit('hIST', d);
 		
 		this.unavailable('hIST');
+	}
+};
+cfsm.tIME = {
+	parse: ['year', 'uint16', 'month', 'uint8', 'day', 'uint8', 'hour', 'uint8', 'minute', 'uint8', 'second', 'uint8'],
+	validate: function(d) {
+		if (d.month === 0 || d.month > 12 || d.day === 0 || d.day > 31 || d.hour > 23 || d.minute > 59 || d.second > 60) {
+			return "invalid date";
+		}
+		// check actual number of days in month
+		if (d.day > 32 - new Date(d.year, d.month, 32).getDate()) {
+			return "invalid days in month";
+		}
+	},
+	state: function(d) {
+		this.emit('tIME', d);
+		
+		this.unavailable('tIME');
 	}
 };
 
