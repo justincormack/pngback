@@ -94,7 +94,7 @@ var vbuf = {
 // needs to do own unlistens
 // could just turn into some helper fns, one to do cascade, one for unlistens, although listen fn that listens for all events on streams is sane
 
-emitter = new events.EventEmitter(); // need to init to make this work.
+var emitter = new events.EventEmitter(); // need to init to make this work.
 var FSM = Object.create(emitter);
 
 // pass the event (but not emitter) to the function
@@ -392,6 +392,7 @@ var cfsm = Object.create(emitter); // no need to inherit from FSM!
 cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
 
 cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appear once, so enforce. prob can simplify table
+	// can probably remove by doing next state andling right
 	IHDR: "1",
 	PLTE: "?",
 	IDAT: "+",
@@ -412,14 +413,17 @@ cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appea
 	tEXt: "*",
 	zTXt: "*"
 };
-// may need to store elsewhere as will be used by construct too
-cfsm.parse = {
-	IHDR: ['width', 'uint32', 'height', 'uint32', 'bitDepth', 'uint8', 'colourType', 'uint8', 'compression', 'uint8', 'filter', 'uint8', 'interlace', 'uint8'],
-	gAMA: ['gamma', 'uint32']
+
+cfsm.unavailable = function() { // helper function to remove from available array
+	var p;
+	for (var i = 0; i < arguments.length; i++) {
+		p = this.available.indexOf(arguments[i]);
+		if (p !== -1) {
+			this.available.splice(p, 1);
+		}
+	}
 };
-cfsm.groups = {
-	initial: ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'IDAT', 'PLTE']
-};
+
 cfsm.parseField = function(data, fields) {
 	var bytes = data.bytes(data.length);
 	var type;
@@ -433,38 +437,52 @@ cfsm.parseField = function(data, fields) {
 		switch (type) {
 			case 'uint32':
 				if (bytes.length < 4) {
-					return this.error("not enough data");
+					return "not enough data";
 				}
 				ret[name] = to32(bytes);
 				bytes = bytes.slice(4);
 			break;
 			case 'uint8':
 				if (bytes.length < 1) {
-					return this.error("not enough data");
+					return "not enough data";
 				}
 				ret[name] = bytes[0];
 				bytes.shift();
 			break;
+			case 'rgb':
+				if (bytes.length % 3 !== 0) {
+					return "rgb is ot a multiple of 3 bytes";
+				}
+				ret[name] = bytes.slice();
+				bytes = [];
+			break;
+			case 'float100k':
+				if (bytes.length < 4) {
+					return "not enough data";
+				}
+				ret[name] = to32(bytes) / 100000;
+				bytes = bytes.slice(4);
+			break;
 			default:
-				return this.error("cannot understand field parse");
+				return "cannot understand field to parse";
 		}
 	}
 	if (bytes.length !== 0) {
-		return this.error("too much data");
+		return "too much data";
 	}
+	
 	return ret;
 };
-cfsm.states = { // functions that are called in each state, return the allowable states (these will be checked for if only allowed once)
-	IHDR: function(data) {
-		var d = this.parseField(data, this.parse.IHDR);
-		if (typeof d == 'undefined') {return;}
 
+cfsm.IHDR = {
+	parse: ['width', 'uint32', 'height', 'uint32', 'bitDepth', 'uint8', 'colourType', 'uint8', 'compression', 'uint8', 'filter', 'uint8', 'interlace', 'uint8'],
+	validate: function(d) {
 		if (d.width === 0 || d.height === 0) {
-			return this.error("width and height of PNG must not be zero");
+			return "width and height of PNG must not be zero";
 		}
 
 		if ([1, 2, 4, 8, 16].indexOf(d.bitDepth) === -1) {
-			return this.error("invalid bit depth");
+			return "invalid bit depth";
 		}
 
 		switch(d.colourType) {
@@ -474,71 +492,95 @@ cfsm.states = { // functions that are called in each state, return the allowable
 			case 4: // greyscale with alpha
 			case 6: // truecolour with alpha
 				if (d.bitDepth < 8) {
-					return this.error("invalid bit depth");
+					return "invalid bit depth";
 				}
 				break;
 			case 3: // indexed colour
 				if (d.bitDepth > 8) {
-					return this.error("invalid bit depth");
+					return "invalid bit depth";
 				}
 				break;
 			default:
-				return this.error("invalid colour type");
+				return "invalid colour type";
 		}
 
 		if (d.compression !== 0) {
-			return this.error("invalid compression type");
+			return "invalid compression type";
 		}
 		
 		if (d.filter !== 0) {
-			return this.error("invalid filter type");
+			return "invalid filter type";
 		}
 		
 		if (d.filter !== 0 && d.filter !== 1) {
-			return this.error("invalid interlace type");
+			return "invalid interlace type";
 		}
-		
+		return;
+	},
+	state: function(d) {
 		this.header = d; // other chunks need to see this header
 		
-		this.emit('IHDR', d);
-		console.log("header " + d);
+		this.emit('IHDR', d); // full to generic code?
 		
-		return this.groups.initial;
-	},
-	PLTE: function(data) {
-		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'tRNS', 'hIST', 'bKGD', 'IDAT'];
-	},
-	IDAT: function(data) {
-		return ['tIME', 'zTXt', 'tEXt', 'iTXt', 'IDAT', 'IEND'];
-	},
-	IEND: function(data) {
-		return [];
-	},
+		console.log("d has " + Object.keys(d));
+		console.log("header: colourType " + d.colourType);
 		
-		"cHRM": "?",
-	gAMA: function(data) {
-		var d = this.parseField(data, this.parse.gAMA);
-		if (typeof d == 'undefined') {return;}
+		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD'];
 		
-		d.gamma = d.gamma / 1000000;
+		switch(d.colourType) {
+			case 0:
+			case 4:
+				this.available.push('IDAT'); // PLTE not allowed
+			break;
+			case 3:
+				this.available.push('PLTE'); // PLTE required
+			break;
+			case 2:
+			case 6:
+				this.available.push('IDAT', 'PLTE'); // PLTE optional
+		}
+	}
+};
+
+cfsm.PLTE = {
+	parse: ["palette", "rgb"],
+	state: function(d) {
+		this.emit('PLTE', d);
 		
+		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'tRNS', 'bKGD', 'hIST', 'IDAT'];
+	}
+};
+
+cfsm.IDAT = {
+	parse: function() {
+		return {}; // temporary!!!!!
+	},
+	state: function(d) {
+		this.emit('IDAT', d);
+		
+		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'IDAT', 'IEND'];
+	}
+};
+
+cfsm.IEND = {
+	parse: [],
+	state: function(d) {
+		this.emit('IEND', d);
+		this.emit('end');
+		
+		this.available = [];
+	}
+};
+
+cfsm.gAMA = {
+	parse: ['gamma', 'float100k'],
+	state: function (d) {
 		this.emit('gAMA', d);
+		
 		console.log("gamma " + d.gamma);
 		
-		return this.groups.initial;
-	},
-		"iCCP": "?",
-		"sRGB": "?",
-		"sBIT": "?",
-		"bKGD": "?",
-		"hIST": "?",
-		"tRNS": "?",
-		"pHYs": "?",
-		"sPLT": "*",
-		"tIME": "?",
-		"iTXt": "*",
-		"tEXt": "*",
-		"zTXt": "*"
+		this.unavailable('gAMA');
+	}
 };
 
 cfsm.finish = function() {
@@ -588,17 +630,39 @@ cfsm.chunk = function(type, data) {
 	
 	// ok we are looking good to go
 	
-	if (typeof this.states[name] !== 'function') {
+	var ci = this[name];
+	
+	var d;
+	
+	if (typeof ci.parse == 'function') {
+		d = ci.parse(data);
+	} else {
+		d = this.parseField(data, ci.parse);
+	}
+	
+	console.log("parse returned " + Object.keys(d));
+	
+	if (typeof d == 'string') {
+		return this.error(d);
+	}
+	
+	if (typeof ci.validate == 'function') {
+		var v = ci.validate(d);
+	
+		if (typeof v == 'string') {
+			return this.error(v);
+		}
+	}
+	
+	if (typeof this[name].state !== 'function') {
 		return this.error("chunk " + name + " has no handler");
 	}
 	
-	var ret = this.states[name].call(this, data);
+	var ret = this[name].state.call(this, d);
 	
-	if (typeof ret === 'undefined') {
-		return; // some error in chunk eg bad data
+	if (typeof ret === 'string') {
+		return this.error(ret);
 	}
-	
-	this.available = ret;
 };
 
 
