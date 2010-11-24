@@ -254,6 +254,10 @@ function to32(bytes) {
 	return c;
 }
 
+function to16(bytes) {
+	return bytes[1] + 256 * bytes[0];
+}
+
 /* png specific from here */
 
 // merge chunk len and chunk type? or even all 4! That would be more efficient
@@ -429,6 +433,7 @@ cfsm.parseField = function(data, fields) {
 	var type;
 	var name;
 	var ret = {};
+	var a = [];
 	var fs = fields.slice();
 	
 	console.log("parse " + fields);
@@ -448,7 +453,7 @@ cfsm.parseField = function(data, fields) {
 				if (bytes.length < 2) {
 					return "not enough data";
 				}
-				ret[name] = bytes[1] + 256 * bytes[0];
+				ret[name] = to16(bytes);
 				bytes = bytes.slice(2);
 			break;
 			case 'uint32':
@@ -458,19 +463,32 @@ cfsm.parseField = function(data, fields) {
 				ret[name] = to32(bytes);
 				bytes = bytes.slice(4);
 			break;
-			case 'rgb':
-				if (bytes.length % 3 !== 0) {
-					return "rgb is ot a multiple of 3 bytes";
-				}
-				ret[name] = bytes.slice();
-				bytes = [];
-			break;
 			case 'float100k':
 				if (bytes.length < 4) {
 					return "not enough data";
 				}
 				ret[name] = to32(bytes) / 100000;
 				bytes = bytes.slice(4);
+			break;
+			case 'rgb': // rgb triples, any number
+				if (bytes.length % 3 !== 0) {
+					return "rgb is not a multiple of 3 bytes";
+				}
+				while (bytes.length !== 0) {
+					a.push({'red': bytes[0], 'green': bytes[1], 'blue': bytes[2]});
+					bytes = bytes.slice(3);
+				}
+				ret[name] = a;
+			break;
+			case 'freq': // uint16 list, any number
+				if (bytes.length % 2 !== 0) {
+					return "frequency is not a multiple of 2 bytes";
+				}
+				while (bytes.length !== 0) {
+					a.push(to16(bytes));
+					bytes = bytes.slice(2);
+				}
+				ret[name] = a;
 			break;
 			default:
 				return "cannot understand field to parse";
@@ -554,6 +572,8 @@ cfsm.PLTE = {
 	parse: ["palette", "rgb"],
 	state: function(d) {
 		this.emit('PLTE', d);
+		
+		this.paletteLength = d.palette.length; // hIST needs this for validation
 		
 		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'tRNS', 'bKGD', 'hIST', 'IDAT'];
 	}
@@ -667,6 +687,27 @@ cfsm.cHRM = {
 		this.emit('cHRM', d);
 		
 		this.unavailable('cHRM');
+	}
+};
+cfsm.pHYs = {
+	parse: ['pixelsX', 'uint32', 'pixelsY', 'uint32', 'unit', 'uint8'],
+	state: function(d) {
+		this.emit('pHYs', d);
+		
+		this.unavailable('pHYs');
+	}
+};
+cfsm.hIST = {
+	parse: ["frequencies", "freq"],
+	validate: function(d) {
+		if (d.frequencies.length !== this.paletteLength) {
+			return "Number of items in histogram not same is in palette";
+		}
+	},
+	state: function(d) {
+		this.emit('hIST', d);
+		
+		this.unavailable('hIST');
 	}
 };
 
