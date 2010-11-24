@@ -260,6 +260,15 @@ function to16(bytes) {
 	return bytes[1] + 256 * bytes[0];
 }
 
+function latinToString(k) {
+	for (i = 0; i < k.length; i++) {
+		if ((k[i] !== 10 && k[i] < 32) || (k[i] > 126 && k[i] < 160)) {   // valid ISO 8859-1 chars 32-126 and 160-255 + line feed
+			return;
+		}
+	}
+	return String.fromCharCode.apply(String, k); // ISO 8859-1 is the same as Unicode code points within this range
+}
+
 /* png specific from here */
 
 // merge chunk len and chunk type? or even all 4! That would be more efficient
@@ -430,12 +439,22 @@ cfsm.unavailable = function() { // helper function to remove from available arra
 	}
 };
 
+cfsm.addAvailable = function() { // helper function to add if not there
+	var p;
+	for (var i = 0; i < arguments.length; i++) {
+		p = this.available.indexOf(arguments[i]);
+		if (p === -1) {
+			this.available.push(arguments[i]);
+		}
+	}
+};
+
 cfsm.parseField = function(data, fields) {
 	var bytes = data.bytes(data.length);
-	var type;
-	var name;
+	var type, name;
 	var ret = {};
 	var a = [];
+	var i, k, s;
 	var fs = fields.slice();
 	
 	console.log("parse " + fields);
@@ -450,28 +469,28 @@ cfsm.parseField = function(data, fields) {
 				}
 				ret[name] = bytes[0];
 				bytes.shift();
-			break;
+				break;
 			case 'uint16':
 				if (bytes.length < 2) {
 					return "not enough data";
 				}
 				ret[name] = to16(bytes);
 				bytes = bytes.slice(2);
-			break;
+				break;
 			case 'uint32':
 				if (bytes.length < 4) {
 					return "not enough data";
 				}
 				ret[name] = to32(bytes);
 				bytes = bytes.slice(4);
-			break;
+				break;
 			case 'float100k':
 				if (bytes.length < 4) {
 					return "not enough data";
 				}
 				ret[name] = to32(bytes) / 100000;
 				bytes = bytes.slice(4);
-			break;
+				break;
 			case 'rgb': // rgb triples, any number
 				if (bytes.length % 3 !== 0) {
 					return "rgb is not a multiple of 3 bytes";
@@ -481,17 +500,55 @@ cfsm.parseField = function(data, fields) {
 					bytes = bytes.slice(3);
 				}
 				ret[name] = a;
-			break;
-			case 'freq': // uint16 list, any number
+				break;
+			case 'uint16l': // uint16 list, any number
 				if (bytes.length % 2 !== 0) {
-					return "frequency is not a multiple of 2 bytes";
+					return "list of 16 bit numbers is not a multiple of 2 bytes";
 				}
 				while (bytes.length !== 0) {
 					a.push(to16(bytes));
 					bytes = bytes.slice(2);
 				}
 				ret[name] = a;
-			break;
+				break;
+			case 'uint8l':
+				ret[name] = bytes.slice();
+				bytes = [];
+				break;
+			case 'keyword': // zero terminated string 1-79 bytes in ISO 8859-1
+				var p = bytes.indexOf(0);
+				if (p === -1) {
+					return "no zero byte after keyword";
+				}
+				k = bytes.slice(0, p);
+				if (k.length === 0 || k.length > 79) {
+					return "keyword empty or too long";
+				}
+				if (k[0] === 32 || k[k.length - 1] === 32) {
+					return "leading or trailing space in keyword";
+				}
+				if (k.indexOf(160) !== -1) {
+					return "non break space not allowed in keyword";
+				}
+				if (k.indexOf(10) !== -1) {
+					return "line feed not allowed in keyword";
+				}
+				s = latinToString(k);
+				if (typeof s == 'undefined') {
+					return "invalid ISO 8859-1 in keyword";
+				}
+				// should also check for multiple spaces if pedantic
+				bytes = bytes.slice(p + 1);
+				ret[name] = s;
+				break;
+			case 'iso8859-1': // string terminated by end of data
+				s = latinToString(bytes);
+				if (typeof s == 'undefined') {
+					return "invalid ISO 8859-1 in string";
+				}
+				ret[name] = s;
+				bytes = [];
+				break;
 			default:
 				return "cannot understand field to parse";
 		}
@@ -553,19 +610,24 @@ cfsm.IHDR = {
 		
 		console.log("header: colour type " + d.type);
 		
-		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD'];
+		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM'];
 		
 		switch(d.type) {
 			case 0:
+				this.addAvailable('IDAT', 'tRNS', 'bKGD'); // PLTE not allowed
+				break;
 			case 4:
-				this.available.push('IDAT'); // PLTE not allowed
-			break;
+				this.addAvailable('IDAT', 'bKGD'); // PLTE not allowed, no tRNS allowed
+				break;
 			case 3:
-				this.available.push('PLTE'); // PLTE required
-			break;
+				this.addAvailable('PLTE'); // PLTE required first
+				break;
 			case 2:
+				this.addAvailable('IDAT', 'PLTE', 'tRNS', 'bKGD'); // PLTE optional
+				break;
 			case 6:
-				this.available.push('IDAT', 'PLTE'); // PLTE optional
+				this.addAvailable('IDAT', 'PLTE', 'bKGD'); // PLTE optional, no tRNS allowed
+				break;
 		}
 	}
 };
@@ -575,9 +637,18 @@ cfsm.PLTE = {
 	state: function(d) {
 		this.emit('PLTE', d);
 		
-		this.paletteLength = d.palette.length; // hIST needs this for validation
+		this.paletteLength = d.palette.length; // hIST, tRNS need this for validation
 		
-		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'tRNS', 'bKGD', 'hIST', 'IDAT'];
+		this.unavailable('iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM');
+		this.addAvailable('bKGD', 'hIST', 'IDAT');
+		switch (this.header.type) {
+			case 4:
+			case 6: // tRNS never allowed if alpha channel exists
+				break;
+			default:
+				this.addAvailable('tRNS');
+		}
+
 	}
 };
 
@@ -588,7 +659,8 @@ cfsm.IDAT = {
 	state: function(d) {
 		this.emit('IDAT', d);
 		
-		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'IDAT', 'IEND'];
+		this.addAvailable('IEND');
+		this.unavailable('pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'hIST');
 	}
 };
 
@@ -605,10 +677,7 @@ cfsm.IEND = {
 cfsm.gAMA = {
 	parse: ['gamma', 'float100k'],
 	state: function (d) {
-		this.emit('gAMA', d);
-		
-		console.log("gamma " + d.gamma);
-		
+		this.emit('gAMA', d);		
 		this.unavailable('gAMA');
 	}
 };
@@ -680,9 +749,38 @@ cfsm.bKGD = {
 	state: function(d) {
 		this.emit('bKGD', d);
 		
-		this.unavailable('bKGD');
+		this.unavailable('bKGD', 'PLTE');
 	}
 };
+
+cfsm.tRNS = {
+	parse: function(data) {
+		var p;
+		switch (this.header.type) {
+			case 0:
+				p = ["grey", "uint16"];
+				break;
+			case 2:
+				p = ["red", "uint16", "green", "uint16", "blue", "uint16"];
+				break;
+			case 3:
+				p = ["alpha", "uint8l"];
+				break;
+		}
+		return this.parseField(data, p);
+	},
+	validate: function(d) {
+		if (typeof d.alpha !== 'undefined' && d.alpha.length > this.paletteLength) {
+			return "Number of transparent items greater than size pf palette";
+		}
+	},
+	state: function(d) {
+		this.emit('tRNS', d);
+		
+		this.unavailable('tRNS', 'PLTE');
+	}
+};
+
 cfsm.cHRM = {
 	parse: ['whiteX', 'float100k', 'whiteY', 'float100k', 'redX', 'float100k', 'redY', 'float100k', 'greenX', 'float100k', 'greenY', 'float100k', 'blueX', 'float100k', 'blueY', 'float100k'],
 	state: function(d) {
@@ -700,7 +798,7 @@ cfsm.pHYs = {
 	}
 };
 cfsm.hIST = {
-	parse: ['frequencies', 'freq'],
+	parse: ['frequencies', 'uint16l'],
 	validate: function(d) {
 		if (d.frequencies.length !== this.paletteLength) {
 			return "Number of items in histogram not same is in palette";
@@ -727,6 +825,14 @@ cfsm.tIME = {
 		this.emit('tIME', d);
 		
 		this.unavailable('tIME');
+	}
+};
+cfsm.tEXt = {
+	parse: ['keyword', 'keyword', 'value', 'iso8859-1'],
+	state: function(d) {
+		this.emit('tEXt', d);
+		
+		console.log("text: " + d.keyword + ": " + d.value);
 	}
 };
 
@@ -760,7 +866,7 @@ cfsm.chunk = function(type, data) {
 	}
 	
 	if (this.available.indexOf(name) === -1) {
-		return this.error("chunk " + name + " not allowed here");
+		return this.error("chunk " + name + " not allowed here: " + this.available);
 	}
 	
 	var rep = this.rep[name];
