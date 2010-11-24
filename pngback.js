@@ -431,6 +431,8 @@ cfsm.parseField = function(data, fields) {
 	var ret = {};
 	var fs = fields.slice();
 	
+	console.log("parse " + fields);
+	
 	while(fs.length > 0) {
 		name = fs.shift();
 		type = fs.shift();
@@ -475,28 +477,28 @@ cfsm.parseField = function(data, fields) {
 };
 
 cfsm.IHDR = {
-	parse: ['width', 'uint32', 'height', 'uint32', 'bitDepth', 'uint8', 'colourType', 'uint8', 'compression', 'uint8', 'filter', 'uint8', 'interlace', 'uint8'],
+	parse: ['width', 'uint32', 'height', 'uint32', 'depth', 'uint8', 'type', 'uint8', 'compression', 'uint8', 'filter', 'uint8', 'interlace', 'uint8'],
 	validate: function(d) {
 		if (d.width === 0 || d.height === 0) {
 			return "width and height of PNG must not be zero";
 		}
 
-		if ([1, 2, 4, 8, 16].indexOf(d.bitDepth) === -1) {
+		if ([1, 2, 4, 8, 16].indexOf(d.depth) === -1) {
 			return "invalid bit depth";
 		}
 
-		switch(d.colourType) {
+		switch(d.type) {
 			case 0: // greyscale
 				break;
 			case 2: // truecolour
 			case 4: // greyscale with alpha
 			case 6: // truecolour with alpha
-				if (d.bitDepth < 8) {
+				if (d.depth < 8) {
 					return "invalid bit depth";
 				}
 				break;
 			case 3: // indexed colour
-				if (d.bitDepth > 8) {
+				if (d.depth > 8) {
 					return "invalid bit depth";
 				}
 				break;
@@ -520,14 +522,13 @@ cfsm.IHDR = {
 	state: function(d) {
 		this.header = d; // other chunks need to see this header
 		
-		this.emit('IHDR', d); // full to generic code?
+		this.emit('IHDR', d); // move to generic code?
 		
-		console.log("d has " + Object.keys(d));
-		console.log("header: colourType " + d.colourType);
+		console.log("header: colour type " + d.type);
 		
 		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD'];
 		
-		switch(d.colourType) {
+		switch(d.type) {
 			case 0:
 			case 4:
 				this.available.push('IDAT'); // PLTE not allowed
@@ -583,6 +584,43 @@ cfsm.gAMA = {
 	}
 };
 
+cfsm.sBIT = {
+	parse: function(data) {
+		var p;
+		switch (this.header.type) {
+			case 0:
+				p = ["grey", "uint8"];
+				break;
+			case 2:
+			case 3:
+				p = ["red", "uint8", "green", "uint8", "blue", "uint8"];
+				break;
+			case 4:
+				p = ["grey", "uint8", "alpha", "uint8"];
+				break;
+			case 6:
+				p = ["red", "uint8", "green", "uint8", "blue", "uint8", "alpha", "uint8"];
+				break;
+		}
+		return this.parseField(data, p);
+	},
+	validate: function(d) {
+		var depth = (this.header.type === 3) ? 8 : this.header.depth;
+		var keys = Object.keys(d);
+		for (var i = 0; i < keys.length; i++) {
+			if (d[keys[i]] === 0 || d[keys[i]] > depth) {
+				return "invalid significant bits";
+			}
+		}
+		return;
+	},
+	state: function(d) {
+		this.emit('sBIT', d);
+		
+		this.unavailable('sBIT');
+	}
+};
+
 cfsm.finish = function() {
 	//cleanup listeners?
 };
@@ -632,22 +670,16 @@ cfsm.chunk = function(type, data) {
 	
 	var ci = this[name];
 	
-	var d;
-	
-	if (typeof ci.parse == 'function') {
-		d = ci.parse(data);
-	} else {
-		d = this.parseField(data, ci.parse);
-	}
-	
-	console.log("parse returned " + Object.keys(d));
+	var d = (typeof ci.parse == 'function') ? ci.parse.call(this, data) : this.parseField(data, ci.parse);
 	
 	if (typeof d == 'string') {
 		return this.error(d);
 	}
 	
+	console.log("parse returned " + Object.keys(d));
+		
 	if (typeof ci.validate == 'function') {
-		var v = ci.validate(d);
+		var v = ci.validate.call(this, d);
 	
 		if (typeof v == 'string') {
 			return this.error(v);
