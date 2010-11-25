@@ -16,7 +16,7 @@ var crc32 = {
 					c = c >>> 1;
 				}	
 			}
-			c = (c < 0) ? 0xffffffff + c + 1: c;
+			c = (c < 0) ? 0x100000000 + c: c;
 			this.table[n] = c;
 		}
 	},
@@ -38,7 +38,7 @@ var crc32 = {
 	finalize: function() {
 		var c = this.crc;
 		c = c ^ 0xffffffff;
-		c = (c < 0) ? 0xffffffff + c + 1: c;
+		c = (c < 0) ? 0x100000000 + c: c;
 		this.crc = c;
 		return c;
 	}
