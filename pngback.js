@@ -16,6 +16,7 @@
 // note on output validate should first check if fits in parse range
 
 var events = require('events');
+var crc = require('./crc');
 
 var isArray = Array.isArray;
 
@@ -185,71 +186,6 @@ function get(len, check) {
 	return f;
 }
 
-// sequence match-type functions
-/*
-function seq(args) {
-	if (! isArray(args)) {
-		args = Array.prototype.slice.call(arguments);
-	}
-	function g(success, fail) {
-		var head = null;
-		var prev = success;
-		while (args.length > 0) {
-			head = args.pop()(prev, fail);
-			prev = head;
-		}
-		return head;
-	}
-	return g;
-} */
-
-/* crc32 - seems like a fairly standard one so not yet namespaced as png */
-var crc32 = {
-	seed: 0xedb88320,
-	crc: 0xffffffff,
-	table: [],
-	init: function() {
-		var c;
-
-		for (var n = 0; n < 256; n++) {
-			c = n;
-			for (var k = 0; k < 8; k++) {
-				if (c & 1) {
-					c = this.seed ^ (c >>> 1);
-				} else {
-					c = c >>> 1;
-				}	
-			}
-			c = (c < 0) ? 0xffffffff + c + 1: c;
-			this.table[n] = c;
-		}
-	},
-	start: function() {
-		this.crc = 0xffffffff;
-		if (this.table.length === 0) {
-			this.init();
-		}
-	},
-	add: function(bytes) {
-		var c = this.crc;
-		var len = bytes.length;
-
-		for (var n = 0; n < len; n++) {
-			c = this.table[(c ^ bytes[n]) & 0xff] ^ (c >>> 8);
-		}
-		this.crc = c;	
-	},
-	finalize: function() {
-		var c = this.crc;
-		c = c ^ 0xffffffff;
-		c = (c < 0) ? 0xffffffff + c + 1: c;
-		this.crc = c;
-		return c;
-	}
-};
-
-crc32.start(); // initialize table on parent object
-
 function to32(bytes) {
 	var c = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
 	c = (c < 0) ? 0xffffffff + c + 1: c;
@@ -384,7 +320,7 @@ pfsm.init = function(stream) {
 	this.vb = Object.create(vbuf);
 	this.vb.init();
 	var vb = this.vb;
-	this.crc = Object.create(crc32);
+	this.crc = Object.create(crc.crc32);
 	this.state = pfsm.match_signature;
 	stream.on('data', function(buf) { // maybe can remove by working directly with buf here not vbuf?
 		vb.data.call(vb, buf);
@@ -454,7 +390,7 @@ cfsm.parseField = function(data, fields) {
 	var type, name;
 	var ret = {};
 	var a = [];
-	var i, k, s;
+	var i, k, s, z;
 	var fs = fields.slice();
 	
 	console.log("parse " + fields);
@@ -549,6 +485,19 @@ cfsm.parseField = function(data, fields) {
 				ret[name] = s;
 				bytes = [];
 				break;
+				case 'ziso8859-1': // compressed string terminated by end of data
+					if (bytes[0] !== 0) {
+						return "unknown compression method";
+					}
+					bytes.shift();
+					z = inflate(bytes);
+					s = latinToString(z);
+					if (typeof s == 'undefined') {
+						return "invalid ISO 8859-1 in string";
+					}
+					ret[name] = s;
+					bytes = [];
+					break;
 			default:
 				return "cannot understand field to parse";
 		}
@@ -833,6 +782,14 @@ cfsm.tEXt = {
 		this.emit('tEXt', d);
 		
 		console.log("text: " + d.keyword + ": " + d.value);
+	}
+};
+cfsm.zTXt = {
+	parse: ['keyword', 'keyword', 'value', 'z-iso8859-1'],
+	state: function(d) {
+		this.emit('zTXt', d);
+		
+		console.log("ztext: " + d.keyword + ": " + d.value);
 	}
 };
 
