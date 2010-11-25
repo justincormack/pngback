@@ -370,9 +370,6 @@ pfsm.init = function(stream) {
 
 var cfsm = Object.create(emitter); // no need to inherit from FSM!
 
-// PNG standard information
-cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
-
 cfsm.unavailable = function() { // helper function to remove from available array
 	var p;
 	for (var i = 0; i < arguments.length; i++) {
@@ -568,7 +565,7 @@ cfsm.IHDR = {
 		
 		console.log("header: colour type " + d.type);
 		
-		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM'];
+		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'unknown'];
 		
 		switch(d.type) {
 			case 0:
@@ -822,22 +819,38 @@ cfsm.bytesToString = function(bytes) {
 	return String.fromCharCode(bytes[0]) + String.fromCharCode(bytes[1]) + String.fromCharCode(bytes[2]) + String.fromCharCode(bytes[3]);
 };
 
+cfsm.critical = function(type) {
+	return type[0] & 0x10 === 0;
+};
+cfsm.reserved = function(type) {
+	return type[2] & 0x10 === 0;
+};
+
 cfsm.chunk = function(type, data) {
 	var name = this.bytesToString(type);
+	var aname = name;
 	
 	console.log("see chunk: " + name);
 	
-	if (this.chunks.indexOf(name) === -1) {
-		return this.error("unknown chunk type " + name + " not yet handled"); // need to add unknown chunk handlers
+	if (this.reserved(type)) {
+		return this.error("chunk " + name + "has lowercase third letter, not supported");
 	}
 	
-	if (this.available.indexOf(name) === -1) {
+	if (typeof this[name] == 'undefined') {
+		if (this.critical(type)) {
+			return this.error("unknown critical chunk type " + name + " not yet handled"); // need to add unknown chunk handlers
+		} else {
+			return; // ignore this chunk - add a handler if you want to handle it. Note technically we allow split IDAT chunks, but thats ok
+		}
+	}
+	
+	if (this.available.indexOf(aname) === -1) {
 		return this.error("chunk " + name + " not allowed here: " + this.available);
 	}
 		
 	// ok we are looking good to go
 	
-	var ci = this[name];
+	var ci = this[aname];
 	
 	var d = (typeof ci.parse == 'function') ? ci.parse.call(this, data) : this.parseField(data, ci.parse);
 	
@@ -855,11 +868,11 @@ cfsm.chunk = function(type, data) {
 		}
 	}
 	
-	if (typeof this[name].state !== 'function') {
+	if (typeof ci.state !== 'function') {
 		return this.error("chunk " + name + " has no handler");
 	}
 	
-	var ret = this[name].state.call(this, d);
+	var ret = ci.state.call(this, d);
 	
 	if (typeof ret === 'string') {
 		return this.error(ret);
