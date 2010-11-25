@@ -13,7 +13,6 @@
 
 // dont make objects reusble - ie no init methods. Make a new one for a new operation. Create prototypes in right state
 
-// note on output validate should first check if fits in parse range
 
 var events = require('events');
 var crc = require('./crc');
@@ -29,13 +28,21 @@ events.EventEmitter.prototype.on2 = function(ev, f, scope) {
 // fix so that is an array of triples: buffer, offset length, not just one offset, length. Fixes edge cases in truncate if then add more... which can do now ended removed
 // hmm, without init all get same buffer! should we make create for our objects?
 
+// 2 options for vbufs: 
+// 1. for use in non IDAT blocks, we basically want to copy data, really want array
+// 2. for IDAT blocks, we want to send a data stream, just with buf chunks (with offset, len though).
+// for IDAT then we would not be able to reconstruct block boundaries. I think thats ok for most apps.
+// ideally we want to store all state on block boundary as a closure. Lets see if we can...
+
+
+
 var vbuf = {
 	init: function() {
 		this.buffers = [];
 		this.offset = 0;
 		this.length = 0;
 	},
-	data: function(buf) {
+	data: function(buf) { // data designed to work from a stream 'data' event
 		this.buffers.push(buf);
 		this.length += buf.length;
 	},
@@ -126,9 +133,8 @@ FSM.listen = function(emitter, ev) {
 // Functions to match against stream
 // apply success and fail values
 
-function match(check, success, fail, again, args) {
-	args = Array.prototype.slice.call(args); // only do if needed!
-	var ret = check.apply(this, args);
+function match(check, success, fail, again, ev, arg) {
+	var ret = check.call(this, ev, arg);
 	if (typeof ret == 'undefined') {
 		return again;
 	}
@@ -136,6 +142,53 @@ function match(check, success, fail, again, args) {
 		return ret;
 	}
 	return (ret === true) ? success : fail;
+}
+
+// new get that doesnt need match, and creates closure directly
+
+function get2(len, check, success, fail, again, ev, arg) {
+	var that = this;
+	function f(prev, ev, buf) {
+		if (ev === 'end') {
+			return false;
+		}
+		var vb = that.vb; // use data event directly once we remove vb
+		if (prev.length + vb.length < len) {
+			prev.push.apply(Array, vb.bytes(vb.length));
+			vb.eat(vb.length);
+			return function(ev, buf) {return f(prev, ev, buf);};
+		}
+		prev.push.apply(Array, vb.bytes(len - prev.length));
+		vb.eat(len - prev.length);
+		if (check.call(that, prev)) {
+			return success;
+		} else {
+			return fail;
+		}
+	}
+	return function(ev, buf) {return f([], ev, buf);};
+}
+
+// general get n bytes, but no checks until end when call check. accept could use, but in some cases good to fail sooner. passes as bytes not vb
+
+function get(len, check) {
+	function f(ev) {
+		if (ev === 'end') {
+			return false;
+		}
+		var vb = this.vb;
+		if (vb.length < len) {
+			return undefined;
+		}
+		var bytes = vb.bytes(len);
+	
+		if (check.call(this, bytes)) {
+			vb.eat(len);
+			return true;
+		}
+		return false;
+	}
+	return f;
 }
 
 // an accept function - matches a list of bytes, as our original match was
@@ -165,35 +218,14 @@ function accept(items) {
 	return f;
 }
 
-// general get n bytes, but no checks until end when call check. accept could use, but in some cases good to fail sooner. passes as bytes not vb
-function get(len, check) {
-	function f(ev) {
-		if (ev === 'end') {
-			return false;
-		}
-		var vb = this.vb;
-		if (vb.length < len) {
-			return undefined;
-		}
-		var bytes = vb.bytes(len);
-	
-		if (check.call(this, bytes)) {
-			vb.eat(len);
-			return true;
-		}
-		return false;
-	}
-	return f;
-}
-
 function to32(bytes) {
 	var c = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
-	c = (c < 0) ? 0xffffffff + c + 1: c;
+	c = (c < 0) ? 0x100000000 + c: c;
 	return c;
 }
 
 function to16(bytes) {
-	return bytes[1] + 256 * bytes[0];
+	return 256 * bytes[0] + bytes[1];
 }
 
 function latinToString(k) {
@@ -279,26 +311,27 @@ pfsm.fail = function() {
 	console.log(this.filename + " is not a png file");
 };
 
-pfsm.match_signature = function() {
-	return match.call(this, accept([137, 80, 78, 71, 13, 10, 26, 10]), this.match_chunk_len, this.fail, this.match_signature, arguments);
+pfsm.match_signature = function(ev, arg) {
+	return match.call(this, accept([137, 80, 78, 71, 13, 10, 26, 10]), this.match_chunk_len, this.fail, this.match_signature, ev, arg);
 };
 
-pfsm.match_chunk_len = function() {
-	return match.call(this, get(4, chunk_len), this.match_chunk_type, this.fail, this.match_chunk_len, arguments);
+pfsm.match_chunk_len = function(ev, arg) {
+	return match.call(this, get(4, chunk_len), this.match_chunk_type, this.fail, this.match_chunk_len, ev, arg);
 };
 
-pfsm.match_chunk_type = function() {
-	return match.call(this, get(4, chunk_type), this.match_chunk_data, this.fail, this.match_chunk_type, arguments);
+pfsm.match_chunk_type = function(ev, arg) {
+	return match.call(this, get(4, chunk_type), this.match_chunk_data, this.fail, this.match_chunk_type, ev, arg);
 };
 	
-pfsm.match_chunk_data = function() {
-	return match.call(this, chunk_data, this.match_chunk_crc, this.fail, this.match_chunk_data, arguments);
+pfsm.match_chunk_data = function(ev, arg) {
+	return match.call(this, chunk_data, this.match_chunk_crc, this.fail, this.match_chunk_data, ev, arg);
 };
 	
-pfsm.match_chunk_crc = function() {
-	return match.call(this, get(4, chunk_crc), this.match_eof, this.fail, this.match_chunk_crc, arguments);
+pfsm.match_chunk_crc = function(ev, arg) {
+	return match.call(this, get(4, chunk_crc), this.match_eof, this.fail, this.match_chunk_crc, ev, arg);
+	//return get2.call(this, 4, chunk_crc, this.match_eof, this.fail, this.match_chunk_crc, ev, arg);
 };
-
+	
 function eof(ev) {
 	if (ev === 'end') {
 		this.emit('end');
@@ -307,8 +340,8 @@ function eof(ev) {
 	return (this.vb.length === 0) ? undefined : false;
 }
 
-pfsm.match_eof = function() {
-	return match.call(this, eof, this.success, this.match_chunk_len, this.match_eof, arguments);
+pfsm.match_eof = function(ev, arg) {
+	return match.call(this, eof, this.success, this.match_chunk_len, this.match_eof, ev, arg);
 };
 
 pfsm.transition = true;
@@ -338,32 +371,7 @@ pfsm.init = function(stream) {
 var cfsm = Object.create(emitter); // no need to inherit from FSM!
 
 // PNG standard information
-//cfsm.criticalChunks = ['IHDR', 'PLTE', 'IDAT', 'IEND'];
-//cfsm.ancillaryChunks = ['cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
 cfsm.chunks = ['IHDR', 'PLTE', 'IDAT', 'IEND', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'tRNS', 'pHYs', 'sPLT', 'tIME', 'iTXt', 'tEXt', 'zTXt'];
-
-cfsm.rep = { // used to filter out ones used before. 1 and ? mean can only appear once, so enforce. prob can simplify table
-	// can probably remove by doing next state andling right
-	IHDR: "1",
-	PLTE: "?",
-	IDAT: "+",
-	IEND: "1",
-	
-	cHRM: "?",
-	gAMA: "?",
-	iCCP: "?", // only one of sRGB and iCCP so modify if one found or handle in state
-	sRGB: "?", // only one of sRGB and iCCP so modify if one found or handle in state
-	sBIT: "?",
-	bKGD: "?",
-	hIST: "?", // not allowed until we get PLTE but this handled in states
-	tRNS: "?", // not allowed until we get PLTE but this handled in states
-	pHYs: "?",
-	sPLT: "*",
-	tIME: "?",
-	iTXt: "*",
-	tEXt: "*",
-	zTXt: "*"
-};
 
 cfsm.unavailable = function() { // helper function to remove from available array
 	var p;
@@ -485,13 +493,14 @@ cfsm.parseField = function(data, fields) {
 				ret[name] = s;
 				bytes = [];
 				break;
-				case 'ziso8859-1': // compressed string terminated by end of data
+				case 'z-iso8859-1': // compressed string terminated by end of data
 					if (bytes[0] !== 0) {
 						return "unknown compression method";
 					}
 					bytes.shift();
-					z = inflate(bytes);
-					s = latinToString(z);
+					//z = inflate(bytes);
+					//s = latinToString(z);
+					s = "unable to uncompress yet!!!!!!!!"
 					if (typeof s == 'undefined') {
 						return "invalid ISO 8859-1 in string";
 					}
@@ -825,19 +834,7 @@ cfsm.chunk = function(type, data) {
 	if (this.available.indexOf(name) === -1) {
 		return this.error("chunk " + name + " not allowed here: " + this.available);
 	}
-	
-	var rep = this.rep[name];
-	var used = this.used[name];
-	if (typeof used !== 'number') {
-		used = 0;
-	}
-	
-	if ((rep === '1' || rep === '?') && used !== 0) {
-		return this.error("chunk " + name + " repeated illegally");
-	}
-	
-	this.used[name] = used + 1;
-	
+		
 	// ok we are looking good to go
 	
 	var ci = this[name];
@@ -873,7 +870,6 @@ cfsm.chunk = function(type, data) {
 // this is basically the init fn!
 cfsm.listen = function(emitter) { // change fsm to work like this? ie dont pass the events let us choose
 	//general init
-	this.used = {};
 	this.available = ['IHDR'];
 	
 	var cfsm = this;

@@ -34,7 +34,7 @@ function testadler(string) {
 	return adler.finalize();
 }
 
-console.log("adler of Wikipedia is " + testadler("Wikipedia") + " should be 300286872");
+//console.log("adler of Wikipedia is " + testadler("Wikipedia") + " should be 300286872");
 
 process.argv.forEach(function(val, index, array) {
 	if (index > 1) {
