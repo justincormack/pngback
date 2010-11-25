@@ -46,8 +46,67 @@ var crc32 = {
 
 crc32.start(); // initialize table on parent object
 
+// adler32 crc implementation
+// not 100% convinced that the loop unroll in js is worth it.
+// Also NMAX can be increased, as we have more than 32 bits to play with.
+
+var adler32 = {
+	start: function() {
+		this.adler = 1;
+	},
+	finalize: function() {
+		return this.adler;
+	},
+	add: function(buf) {
+		var adler = this.adler;
+		var len = buf.length;
+		var offset = 0;
+		var BASE = 65521;
+		var NMAX = 5552;  // NMAX is the largest n such that 255n(n+1)/2 + (n+1)(BASE-1) <= 2^32-1
+		var n;
+	
+		var sum2 = (adler >>> 16);
+		adler &= 0xffff;
+	
+		while (len) {
+			n = (len > NMAX) ? NMAX : len;
+			len -= n;
+			while (n) {
+				if (n > 16) {
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					adler += buf[offset++]; sum2 += adler;
+					n -= 16;
+				} else {
+					adler += buf[offset++]; sum2 += adler;
+					n--;
+				}
+			}
+			adler %= BASE;
+			sum2 %= BASE;
+		}
+
+		this.adler = adler + sum2 * 65536;
+	}
+};
+
+
 (function(exports) {
 	exports.crc32 = crc32;
+	exports.adler32 = adler32;
 })(
 
   typeof exports === 'object' ? exports : this

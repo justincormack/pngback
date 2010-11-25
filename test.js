@@ -3,7 +3,7 @@
 var events = require('events');
 var fs = require('fs');
 var png = require('./pngback');
-var adler32 = require('./adler32');
+var crc = require('./crc');
 
 function test5(filename, stream) {
 	var pfsm = Object.create(png.pfsm);
@@ -28,7 +28,7 @@ function testadler(string) {
 		a.push(string.charCodeAt(i));
 	}
 	
-	var adler = Object.create(adler32.adler32);
+	var adler = Object.create(crc.adler32);
 	adler.start();
 	adler.add(a);
 	return adler.finalize();
