@@ -20,7 +20,8 @@
 // then higher level parse, eg XMP and image data.
 // the levels after ordering pass can be compositional rather than listen ie you construct a listener from an array/args
 
-// make these the same object, but call different routines
+// make these the same object, but call different routines, that return an instance
+// need to link all to an info object, that has the state of the current one, eg header
 
 var events = require('events');
 var crc = require('./crc');
@@ -503,20 +504,28 @@ cfsm.parseField = function(data, fields) {
 				ret[name] = s;
 				bytes = [];
 				break;
-				case 'z-iso8859-1': // compressed string terminated by end of data
-					if (bytes[0] !== 0) {
-						return "unknown compression method";
-					}
-					bytes.shift();
-					//z = inflate(bytes);
-					//s = latinToString(z);
-					s = "unable to uncompress yet!!!!!!!!"
-					if (typeof s == 'undefined') {
-						return "invalid ISO 8859-1 in string";
-					}
-					ret[name] = s;
-					bytes = [];
-					break;
+			case 'z-iso8859-1': // compressed string terminated by end of data
+				if (bytes[0] !== 0) {
+					return "unknown compression method";
+				}
+				bytes.shift();
+				//z = inflate(bytes);
+				//s = latinToString(z);
+				s = "unable to uncompress yet!!!!!!!!"
+				if (typeof s == 'undefined') {
+					return "invalid ISO 8859-1 in string";
+				}
+				ret[name] = s;
+				bytes = [];
+				break;
+			case 'zdata': // compressed arbitrary data
+				if (bytes[0] !== 0) {
+					return "unknown compression method";
+				}
+				bytes.shift();
+				// unable to uncompress yet!!!!!!!!
+				ret[name] = bytes.slice(); // return compressed instead...
+				break;
 			default:
 				return "cannot understand field to parse";
 		}
@@ -809,6 +818,33 @@ cfsm.zTXt = {
 		this.emit('zTXt', d);
 		
 		console.log("ztext: " + d.keyword + ": " + d.value);
+	}
+};
+
+cfsm.iTXt = {
+	
+};
+
+
+cfsm.iCCP = {
+	parse: ['name': 'keyword', 'profile': 'zdata'];
+	state: function(d) {
+		this.emit('iCCP', d);
+		
+		this.unavailable('iCCP', 'sRGB');
+	}
+};
+cfsm.sRGB = {
+	parse: ['intent': 'uint8'];
+	validate: function(d) {
+		if (d.intent > 3) {
+			return "unknown sRGB intent";
+		}
+	}
+	state: dunction(d) {
+		this.emit('sRGB', d);
+		
+		this.unavailable('iCCP', 'sRGB');
 	}
 };
 
