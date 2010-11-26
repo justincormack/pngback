@@ -19,6 +19,13 @@ function test5(filename, stream) {
 	//fsm.on2('finish', sb.finish, sb);
 }
 
+function test6(filename, stream) {
+	var ping = Object.create(png.png);
+	
+	ping.filename = filename;
+	ping.stream(stream);
+}
+
 //test1();
 
 function testadler(string) {
@@ -39,7 +46,8 @@ function testadler(string) {
 process.argv.forEach(function(val, index, array) {
 	if (index > 1) {
 		//test2(fs.ReadStream(val));
-		test5(val, fs.ReadStream(val));
+		//test5(val, fs.ReadStream(val));
+		test6(val, fs.ReadStream(val));
 	}
 });
 

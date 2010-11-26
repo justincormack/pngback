@@ -14,10 +14,10 @@
 // dont make objects reusble - ie no init methods. Make a new one for a new operation. Create prototypes in right state
 
 
-// push chunk names and name validation into first pass, so emit name.
-// second pass just ordering, and optional if you dont need it.
-// then parsing pass, emits structures - dont listen on ones you dont need
-// then higher level parse, eg XMP and image data.
+// push chunk names and name validation into first pass, so emit name. 
+// second pass just ordering, and optional if you dont need it. NO - merging this into first but only enforce forbiddens
+// then parsing pass, emits structures - dont listen on ones you dont need, 
+// then higher level parse, eg XMP and image data. (XMP needs parse, IDAT a bit odd)
 // the levels after ordering pass can be compositional rather than listen ie you construct a listener from an array/args
 
 // make these the same object, but call different routines, that return an instance
@@ -27,6 +27,8 @@ var events = require('events');
 var crc = require('./crc');
 
 var isArray = Array.isArray;
+
+var emitter = new events.EventEmitter(); // need to init to make this work.
 
 // extend eventEmitter to be able to emit an event in a different scope than that of the eventEmitter itself
 events.EventEmitter.prototype.on2 = function(ev, f, scope) {
@@ -104,44 +106,6 @@ var vbuf = {
 		}
 		return bytes;
 	}
-};
-
-// FSM. receives events and has an emitter for the state functions to use.
-// aha, we want an emitter for each fsm, which the functions get to use
-// should an fsm be a function, so can use it as a component of another fsm? or just evented composition? or can we use functions to compose?
-// also should listen events be constructors?
-
-// barely need this. eg for second stage, could make own just as easily, as would quite like diff fns for diff events. And without self transition is just ev handler!
-// needs to do own unlistens
-// could just turn into some helper fns, one to do cascade, one for unlistens, although listen fn that listens for all events on streams is sane
-
-var emitter = new events.EventEmitter(); // need to init to make this work.
-var FSM = Object.create(emitter);
-
-// pass the event (but not emitter) to the function
-// redo this to just pass emitter? we know then which events we need to listen to
-
-// junk this for simple function, which is all it is...
-
-FSM.listen = function(emitter, ev) {
-	var fsm = this;
-	function f() {
-		var args = Array.prototype.slice.call(arguments);
-		args.unshift(ev);
-		fsm.prev = fsm.state;
-		//console.log("event " + args[0]);
-		//console.log("state " + fsm.state);
-		if (typeof fsm.state == 'function') {
-			fsm.state = fsm.state.apply(fsm, args);
-		}
-
-		while (typeof fsm.state == 'function' && fsm.state !== fsm.prev) {
-			fsm.prev = fsm.state;
-			//console.log("internal event state " + fsm.state);
-			fsm.state = fsm.state.call(fsm, 'transition');
-		}
-	}
-	emitter.on(ev, f);
 };
 
 // Functions to match against stream
@@ -267,7 +231,7 @@ function utf8ToString(bytes) {
 	var byte1, byte2, byte3, byte4, num;
 	var hi, low;
 			
-	if (bytes.slice(0, 3) == "\xEF\xBB\xBF") { // BOM
+	if (bytes.slice(0, 3) == [0xEF, 0xBB, 0xBF]) { // BOM
 		i = 3;
 	}
 
@@ -361,6 +325,144 @@ function chunk_crc(bytes) {
 }
 
 
+// redo the low level transport parse from scratch
+
+png = Object.create(emitter);
+
+png.forbidden = { // these are the chunks that are forbidden after other ones
+	// corresponds to a weak validation
+	IHDR: function() {
+		this.forbidden = [];
+
+		switch(this.header.type) {
+			case 0:
+				this.forbidden.push('PLTE');
+				break;
+			case 2:
+			case 3:
+				break;
+			case 4:
+				this.forbidden.push('PLTE', 'tRNS');
+			break;
+			case 6:
+				this.forbidden.push('tRNS');
+			break;
+		}
+	},
+	IEND: function() {
+		this.forbidden = ['*']; // try to remove
+	},
+	PLTE: ['iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM'],
+	IDAT: ['pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'hIST'],
+	gAMA: ['gAMA'],
+	sBIT: ['sBIT'],
+	bKGD: ['bKGD', 'PLTE'],
+	tRNS: ['tRNS', 'PLTE'],
+	cHRM: ['cHRM'],
+	pHYs: ['pHYs'],
+	hIST: ['hIST'],
+	tIME: ['tIME'],
+	iCCP: ['iCCP', 'sRGB'],
+	sRGB: ['iCCP', 'sRGB']
+};
+
+png.signature = [137, 80, 78, 71, 13, 10, 26, 10];
+
+png.success = function() {
+	console.log(this.filename + " is a png file");
+};
+
+png.fail = function() {
+	console.log(this.filename + " is not a png file");
+};
+
+png.stream = function(stream) { // listen on a stream, or something that emits the same events
+	var png = this;
+	this.vb = Object.create(vbuf);
+	this.vb.init();
+	vb = this.vb;
+	this.crc = Object.create(crc.crc32);
+	
+	function unlisten() {
+		stream.removeListener('data', data);
+		stream.removeListener('end', end);	
+	}
+	
+	function data(buf) {
+		vb.data.call(vb, buf);
+		
+		while (typeof png.state == 'function' && vb.length) { // process until data runs out
+			png.state = png.state();
+		}
+		
+		if (typeof png.state == 'undefined') { // this is an error state - might be object though?
+			unlisten();
+			png.fail();
+		}
+	}
+	
+	function end() {
+		if (png.state === null) { // use null as require end marker
+			emit('end');
+		} else {
+			emit('error'); // or something
+		}
+		unlisten();
+	}
+	
+	function get(match, len) {
+		
+		function get2(acc) {
+			var max = len - acc.length;
+			max = (max < vb.length) ? vb.length : max;
+			var bytes = vb.bytes(max);
+			acc.push(bytes);
+			
+			if (acc.length < len) {
+				return function () {return get2(acc);};
+			}
+			// call match and test
+		}
+		
+		get2([]);
+	}
+	
+	function accept(bytes, success) {
+		var compare = bytes.slice();
+		var c, v;
+		
+		while (compare.length > 0 && vb.length > 0) {
+			c = compare.shift();
+			v = vb.bytes(1);
+			vb.eat(1);
+			if (c != v) {
+				return;
+			}
+		}
+		if (compare.length > 0) {
+			console.log("closure");
+			return function() {return accept(compare, success);};
+		}
+		return success;
+	}
+	
+	function sig() {return accept(png.signature, png.success);}
+	
+	this.state = sig;
+	
+	stream.on('data', data);
+	stream.on('end', end);	
+};
+
+
+
+
+
+
+
+
+
+
 // maybe the pfsm should also pass a reference to the vbuffer of the whole chunk, in case want to send through unchanged.
 // not just the data part, as after all if that is not changed we do not need to eg recalculate crc
 // for some apps of course just want to drop original data
@@ -370,6 +472,34 @@ function chunk_crc(bytes) {
 // then data is another vbuff view of same vbuf?
 
 // enforce IHDR first here too, (and even parse it?)
+
+var FSM = Object.create(emitter);
+
+// pass the event (but not emitter) to the function
+// redo this to just pass emitter? we know then which events we need to listen to
+
+// junk this for simple function, which is all it is...
+
+FSM.listen = function(emitter, ev) {
+	var fsm = this;
+	function f() {
+		var args = Array.prototype.slice.call(arguments);
+		args.unshift(ev);
+		fsm.prev = fsm.state;
+		//console.log("event " + args[0]);
+		//console.log("state " + fsm.state);
+		if (typeof fsm.state == 'function') {
+			fsm.state = fsm.state.apply(fsm, args);
+		}
+
+		while (typeof fsm.state == 'function' && fsm.state !== fsm.prev) {
+			fsm.prev = fsm.state;
+			//console.log("internal event state " + fsm.state);
+			fsm.state = fsm.state.call(fsm, 'transition');
+		}
+	}
+	emitter.on(ev, f);
+};
 
 var pfsm = Object.create(FSM);
 
@@ -435,7 +565,7 @@ pfsm.init = function(stream) {
 	});
 };
 
-// next layer is chunk ordering constraints, and chunk behaviour
+// next layer is parsing
 
 var cfsm = Object.create(emitter); // no need to inherit from FSM!
 
@@ -460,6 +590,7 @@ cfsm.addAvailable = function() { // helper function to add if not there
 	}
 };
 
+// this could be done as state driven too, or at least function based not cases, so extensible.
 cfsm.parseField = function(data, fields) {
 	var bytes = data.bytes(data.length);
 	var type, name;
@@ -730,8 +861,8 @@ cfsm.PLTE = {
 	state: function(d) {
 		this.emit('PLTE', d);
 		
-		this.unavailable('iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM');
 		this.addAvailable('bKGD', 'hIST', 'IDAT');
+		this.unavailable('iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM');
 		
 		switch (this.header.type) {
 			case 4:
@@ -763,7 +894,7 @@ cfsm.IEND = {
 		this.emit('end');
 		
 		this.available = [];
-		this.forbidden = ['*'];
+		this.forbidden = ['*']; // probably dont need
 	}
 };
 
@@ -1062,6 +1193,7 @@ cfsm.listen = function(emitter) { // change fsm to work like this? ie dont pass 
 	exports.match = match;
 	exports.pfsm = pfsm;
 	exports.cfsm = cfsm;
+	exports.png = png;
 })(
 
   typeof exports === 'object' ? exports : this
