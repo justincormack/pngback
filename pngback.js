@@ -14,6 +14,14 @@
 // dont make objects reusble - ie no init methods. Make a new one for a new operation. Create prototypes in right state
 
 
+// push chunk names and name validation into first pass, so emit name.
+// second pass just ordering, and optional if you dont need it.
+// then parsing pass, emits structures - dont listen on ones you dont need
+// then higher level parse, eg XMP and image data.
+// the levels after ordering pass can be compositional rather than listen ie you construct a listener from an array/args
+
+// make these the same object, but call different routines
+
 var events = require('events');
 var crc = require('./crc');
 
@@ -34,7 +42,9 @@ events.EventEmitter.prototype.on2 = function(ev, f, scope) {
 // for IDAT then we would not be able to reconstruct block boundaries. I think thats ok for most apps.
 // ideally we want to store all state on block boundary as a closure. Lets see if we can...
 
-
+// move to a single buffer model, with an offset, not vectors.
+// hmm, not good though - means emitting multiple pieces for a single chunk, not one event. So keep vbuf.
+// Except maybe for IDAT, where we could emit fake chunks, each exactly from one buffer (singleton vbuf)
 
 var vbuf = {
 	init: function() {
@@ -109,6 +119,9 @@ var FSM = Object.create(emitter);
 
 // pass the event (but not emitter) to the function
 // redo this to just pass emitter? we know then which events we need to listen to
+
+// junk this for simple function, which is all it is...
+
 FSM.listen = function(emitter, ev) {
 	var fsm = this;
 	function f() {
@@ -121,7 +134,7 @@ FSM.listen = function(emitter, ev) {
 			fsm.state = fsm.state.apply(fsm, args);
 		}
 
-		while (fsm.transition === true && typeof fsm.state == 'function' && fsm.state !== fsm.prev) {
+		while (typeof fsm.state == 'function' && fsm.state !== fsm.prev) {
 			fsm.prev = fsm.state;
 			//console.log("internal event state " + fsm.state);
 			fsm.state = fsm.state.call(fsm, 'transition');
@@ -145,7 +158,7 @@ function match(check, success, fail, again, ev, arg) {
 }
 
 // new get that doesnt need match, and creates closure directly
-
+// dont do like this - states can know their next states, not inject them externally.
 function get2(len, check, success, fail, again, ev, arg) {
 	var that = this;
 	function f(prev, ev, buf) {
@@ -218,6 +231,7 @@ function accept(items) {
 	return f;
 }
 
+// turn into methods, as are png specific?
 function to32(bytes) {
 	var c = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
 	c = (c < 0) ? 0x100000000 + c: c;
@@ -311,6 +325,7 @@ pfsm.fail = function() {
 	console.log(this.filename + " is not a png file");
 };
 
+// pass the success, fail into the create fn!
 pfsm.match_signature = function(ev, arg) {
 	return match.call(this, accept([137, 80, 78, 71, 13, 10, 26, 10]), this.match_chunk_len, this.fail, this.match_signature, ev, arg);
 };
@@ -344,9 +359,7 @@ pfsm.match_eof = function(ev, arg) {
 	return match.call(this, eof, this.success, this.match_chunk_len, this.match_eof, ev, arg);
 };
 
-pfsm.transition = true;
-
-// some sort of compositional method for putting these together would be nice. Look for methods, etc.
+// some sort of compositional method for putting these together would be nice. Look for methods, etc. Basically a pipe fn that composes.
 
 // remove init fn - just put in starting state and allow clone, as far as is possible anyway
 pfsm.init = function(stream) {
@@ -565,7 +578,7 @@ cfsm.IHDR = {
 		
 		console.log("header: colour type " + d.type);
 		
-		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'unknown'];
+		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM'];
 		
 		switch(d.type) {
 			case 0:
