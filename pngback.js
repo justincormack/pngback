@@ -329,6 +329,7 @@ function chunk_crc(bytes) {
 
 png = Object.create(emitter);
 
+// move back to parse I think! but in this form
 png.forbidden = { // these are the chunks that are forbidden after other ones
 	// corresponds to a weak validation
 	IHDR: function() {
@@ -392,7 +393,7 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 	function data(buf) {
 		vb.data.call(vb, buf);
 		
-		while (typeof png.state == 'function' && vb.length) { // process until data runs out
+		while (typeof png.state == 'function' && vb.length > 0) { // process until data runs out
 			png.state = png.state('data');
 		}
 		
@@ -400,6 +401,7 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 			unlisten();
 			png.fail();
 		}
+		console.log("waiting for new event - vb length is " + vb.length + " state is " + vb.state);
 	}
 	
 	function end() {
@@ -413,6 +415,7 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 	}
 	
 	function get(len, match, success, ev, acc) {
+		console.log("get ev " + ev);
 		
 		if (ev != 'data') {
 			return;
@@ -423,16 +426,17 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 		}
 
 		var max = len - acc.length;
-		max = (max < vb.length) ? vb.length : max;
-		var bytes = vb.bytes(max);
-		acc.push(bytes);
+		max = (max > vb.length) ? vb.length : max;
+		acc = acc.concat(vb.bytes(max));
 			
 		if (acc.length < len) {
+			console.log("get closure: " + acc);
 			return function (ev) {return get(len, match, success, ev, acc);};
 		}
 		
 		if (match(acc)) {
-			console.log("chunk ok");
+			console.log("chunk ok: " + success);
+			vb.eat(len);
 			return success;
 		}
 		return;
@@ -471,9 +475,10 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 		}
 	}
 	
-	function chunkcrc(ev) {return get(chunk.length, function(bytes) {
-			if ((to32(bytes) !== png.crc.crc)) {
-				console.log("failed crc");
+	function chunkcrc(ev) {return get(4, function(bytes) {
+			var c = to32(bytes);
+			if (c !== png.crc.crc) {
+				console.log("failed crc: " + c + " vs " +png.crc.crc);
 				return false;
 			}
 			// now emit a chunk event
@@ -482,15 +487,27 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 			return true;
 		}, chunkend, ev);}
 		
-		
-	// not working as get eats bytes - need diff fn.
-	function chunkdata(ev) {return get(chunk.length, function(bytes) {
-			png.crc.add(vb.bytes(chunk.length));
-			png.crc.finalize();
-			chunk.data = vb.ref(chunk.length);
-			return true;
-		}, chunkcrc, ev);}
-	
+	// not going to work either - never returns! Need to redo vb, so the v one is constructed here, just get the buffer in the call....
+	// see code at the top, waiting for empty. closure needs to construct v version. Kind of hybrid/
+	function chunkdata(ev) {
+		if (chunk.length === 0) {
+			return chunkcrc;
+		}
+		if (ev === 'end') {
+			return;
+		}
+		if (vb.length < chunk.length) {
+			console.log("data closure"); // broken!
+			return function(ev) {return chunkdata(ev);};
+		}
+		png.crc.add(vb.bytes(chunk.length)); // can we do without copying? ie read from bytes
+		png.crc.finalize();
+		chunk.data = vb.ref(chunk.length);
+		vb.eat(chunk.length);
+		console.log("eat data: " + chunk.length);
+		return chunkcrc;
+	}
+
 	function chunktype(ev) {return get(4, function(bytes) {
 			var b;
 			for (var i = 0; i < 4; i++) {
@@ -499,19 +516,23 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 					return false;
 				}
 			}
-			chunk.type = bytes;
 			chunk.name = String.fromCharCode.apply(String, bytes);
+			
+			console.log("got name chunk: " + chunk.name );
 			png.crc.start();
 			png.crc.add(bytes);
 			return true;
 		}, chunkdata, ev);}
 
 	function chunklen(ev) {return get(4, function(bytes) {
+		console.log("len bytes " + bytes + " " + bytes[0] + " " + bytes[1] + " " + bytes[2] + " " + bytes[3]);
 			if (bytes[0] & 0x80) { // high bit must not be set
+				console.log("bad chunklen");
 				return false;
 			}
 			chunk.length = to32(bytes);
 			// probably a good idea to add a smaller length check here...
+			console.log("len is " + chunk.length);
 			return true;
 		}, chunktype, ev);}
 	
