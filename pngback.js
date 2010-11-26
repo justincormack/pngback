@@ -252,6 +252,59 @@ function latinToString(k) {
 	return String.fromCharCode.apply(String, k); // ISO 8859-1 is the same as Unicode code points within this range
 }
 
+function asciiToString(k) {
+	for (i = 0; i < k.length; i++) {
+		if (k[i] < 32 || k[i] > 126) {
+			return;
+		}
+	}
+	return String.fromCharCode.apply(String, k);
+}
+
+function utf8ToString(bytes) {
+	var i = 0;
+	var string = "";
+	var byte1, byte2, byte3, byte4, num;
+	var hi, low;
+			
+	if (bytes.slice(0, 3) == "\xEF\xBB\xBF") { // BOM
+		i = 3;
+	}
+
+	for( ; i < bytes.length; i++) {
+		byte1 = bytes[i];
+		if (byte1 < 0x80) {
+			num = byte1;
+		} else if (byte1 >= 0xC2 && byte1 < 0xE0) {
+			byte2 = bytes[++i];
+			num = ((byte1 & 0x1F) << 6) + (byte2 & 0x3F);
+		} else if (byte1 >= 0xE0 && byte1 < 0xF0) {
+			byte2 = bytes[++i];
+			byte3 = bytes[++i];
+			num = ((byte1 & 0xFF) << 12) + ((byte2 & 0x3F) << 6) + (byte3 & 0x3F);
+		} else if (byte1 >= 0xF0 && byte1 < 0xF5) {
+			byte2 = bytes[++i];
+			byte3 = bytes[++i];
+			byte4 = bytes[++i];
+			num = ((byte1 & 0x07) << 18) + ((byte2 & 0x3F) << 12) + ((byte3 & 0x3F) << 6) + (byte4 & 0x3F);
+		}
+
+		if (num >= 0x10000) { // split it up using surrogates
+			num -= 0x10000;
+
+			hi  = (num & 0xFFC00) >> 10; // first 10 bits
+			low = num & 0x003FF; // last  10 bits
+
+			hi  += 0xD800; // high surrogate range
+			low += 0xDC00; // low surrogate range
+			string += String.fromCharCode(hi, low);
+		} else {
+			string += String.fromCharCode(num);
+		}	
+	}
+	return string;
+}
+
 /* png specific from here */
 
 // merge chunk len and chunk type? or even all 4! That would be more efficient
@@ -412,6 +465,17 @@ cfsm.parseField = function(data, fields) {
 	var i, k, s, z;
 	var fs = fields.slice();
 	
+	function zterm() {
+		var p = bytes.indexOf(0);
+		if (p === -1) {
+			return;
+		}
+		var k = bytes.slice(0, p);
+		bytes = bytes.slice(p + 1);
+		
+		return k;
+	}
+	
 	console.log("parse " + fields);
 	
 	while(fs.length > 0) {
@@ -466,16 +530,15 @@ cfsm.parseField = function(data, fields) {
 				}
 				ret[name] = a;
 				break;
-			case 'uint8l':
+			case 'bytes':
 				ret[name] = bytes.slice();
 				bytes = [];
 				break;
 			case 'keyword': // zero terminated string 1-79 bytes in ISO 8859-1
-				var p = bytes.indexOf(0);
-				if (p === -1) {
-					return "no zero byte after keyword";
+				k = zterm();
+				if (typeof k == 'undefined') {
+					return "string not null terminated";
 				}
-				k = bytes.slice(0, p);
 				if (k.length === 0 || k.length > 79) {
 					return "keyword empty or too long";
 				}
@@ -493,8 +556,53 @@ cfsm.parseField = function(data, fields) {
 					return "invalid ISO 8859-1 in keyword";
 				}
 				// should also check for multiple spaces if pedantic
-				bytes = bytes.slice(p + 1);
 				ret[name] = s;
+				break;
+			case 'ascii-0': // zero terminated ascii string
+				k = zterm();
+				if (typeof k == 'undefined') {
+					return "string not null terminated";
+				}
+				s = asciiToString(k);
+				if (typeof s == 'undefined') {
+					return "invalid ASCII in string";
+				}
+				ret[name] = s;
+				break;
+			case 'utf8-0': // zero terminated UTF8 string
+				k = zterm();
+				if (typeof k == 'undefined') {
+					return "string not null terminated";
+				}
+				s = utf8ToString(k);
+				if (typeof s == 'undefined') {
+					return "invalid UTF8 in string";
+				}
+				ret[name] = s;
+				break;
+			case 'z-optional': // iTXt optional compression field
+				if (bytes.length < 2) {
+					return "not enough data";
+				}
+				if (bytes[0] > 1 || bytes[1] !== 0) {
+					return "invalid compression setting";
+				}
+				ret[name] = (bytes[0] === 1);
+				bytes = bytes.slice(2);
+				break;
+			case 'oz-utf8': // optionally compressed UTF8 terminated by end of data
+				if (ret.compression === true) {
+					//z = inflate(bytes); // !!!!!!!!!!!!
+					z = [];
+				} else {
+					z = bytes.slice();
+				}
+				s = utf8ToString(z);
+				if (typeof s == 'undefined') {
+					return "invalid UTF8 in string";
+				}
+				ret[name] = s;
+				bytes = [];
 				break;
 			case 'iso8859-1': // string terminated by end of data
 				s = latinToString(bytes);
@@ -511,7 +619,7 @@ cfsm.parseField = function(data, fields) {
 				bytes.shift();
 				//z = inflate(bytes);
 				//s = latinToString(z);
-				s = "unable to uncompress yet!!!!!!!!"
+				s = "unable to uncompress yet!!!!!!!!";
 				if (typeof s == 'undefined') {
 					return "invalid ISO 8859-1 in string";
 				}
@@ -525,6 +633,7 @@ cfsm.parseField = function(data, fields) {
 				bytes.shift();
 				// unable to uncompress yet!!!!!!!!
 				ret[name] = bytes.slice(); // return compressed instead...
+				bytes = [];
 				break;
 			default:
 				return "cannot understand field to parse";
@@ -741,7 +850,7 @@ cfsm.tRNS = {
 				p = ["red", "uint16", "green", "uint16", "blue", "uint16"];
 				break;
 			case 3:
-				p = ["alpha", "uint8l"];
+				p = ["alpha", "bytes"];
 				break;
 		}
 		return this.parseField(data, p);
@@ -805,43 +914,48 @@ cfsm.tIME = {
 	}
 };
 cfsm.tEXt = {
-	parse: ['keyword', 'keyword', 'value', 'iso8859-1'],
+	parse: ['keyword', 'keyword', 'text', 'iso8859-1'],
 	state: function(d) {
 		this.emit('tEXt', d);
 		
-		console.log("text: " + d.keyword + ": " + d.value);
+		console.log("text: " + d.keyword + ": " + d.text);
 	}
 };
 cfsm.zTXt = {
-	parse: ['keyword', 'keyword', 'value', 'z-iso8859-1'],
+	parse: ['keyword', 'keyword', 'text', 'z-iso8859-1'],
 	state: function(d) {
 		this.emit('zTXt', d);
 		
-		console.log("ztext: " + d.keyword + ": " + d.value);
+		console.log("ztext: " + d.keyword + ": " + d.text);
 	}
 };
 
 cfsm.iTXt = {
-	
+	parse: ['keyword', 'keyword', 'compression', 'z-optional', 'language', 'ascii00', 'translated', 'utf8-0', 'text', 'oz-utf8'],
+	state: function(d) {
+		this.emit('iTXt', d);
+
+		console.log("ztext: " + d.keyword + ": " + d.text);
+	}
 };
 
-
 cfsm.iCCP = {
-	parse: ['name': 'keyword', 'profile': 'zdata'];
+	parse: ['name', 'keyword', 'profile', 'zdata'],
 	state: function(d) {
 		this.emit('iCCP', d);
 		
 		this.unavailable('iCCP', 'sRGB');
 	}
 };
+
 cfsm.sRGB = {
-	parse: ['intent': 'uint8'];
+	parse: ['intent', 'uint8'],
 	validate: function(d) {
 		if (d.intent > 3) {
 			return "unknown sRGB intent";
 		}
-	}
-	state: dunction(d) {
+	},
+	state: function(d) {
 		this.emit('sRGB', d);
 		
 		this.unavailable('iCCP', 'sRGB');
