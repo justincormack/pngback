@@ -730,8 +730,6 @@ cfsm.PLTE = {
 	state: function(d) {
 		this.emit('PLTE', d);
 		
-		this.paletteLength = d.palette.length; // hIST, tRNS need this for validation - remove check now?
-		
 		this.unavailable('iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM');
 		this.addAvailable('bKGD', 'hIST', 'IDAT');
 		
@@ -864,11 +862,6 @@ cfsm.tRNS = {
 		}
 		return this.parseField(data, p);
 	},
-	validate: function(d) {
-		if (typeof d.alpha !== 'undefined' && d.alpha.length > this.paletteLength) {
-			return "Number of transparent items greater than size pf palette";
-		}
-	},
 	state: function(d) {
 		this.emit('tRNS', d);
 		
@@ -894,11 +887,6 @@ cfsm.pHYs = {
 };
 cfsm.hIST = {
 	parse: ['frequencies', 'uint16l'],
-	validate: function(d) {
-		if (d.frequencies.length !== this.paletteLength) {
-			return "Number of items in histogram not same is in palette";
-		}
-	},
 	state: function(d) {
 		this.emit('hIST', d);
 		
@@ -1015,11 +1003,6 @@ cfsm.chunk = function(type, data) {
 		}
 	}
 	
-	/*
-	if (this.available.indexOf(name) === -1) {
-		return this.error("chunk " + name + " not allowed here: " + this.available);
-	} */
-	// testing new forbidden rules
 	if (this.forbidden == '!IHDR' && name !== 'IHDR') {
 		return this.error("IHDR must be first chunk, saw " + name);
 	} else if (this.forbidden == '*') {
