@@ -382,6 +382,7 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 	this.vb.init();
 	vb = this.vb;
 	this.crc = Object.create(crc.crc32);
+	var chunk = {};
 	
 	function unlisten() {
 		stream.removeListener('data', data);
@@ -392,7 +393,7 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 		vb.data.call(vb, buf);
 		
 		while (typeof png.state == 'function' && vb.length) { // process until data runs out
-			png.state = png.state();
+			png.state = png.state('data');
 		}
 		
 		if (typeof png.state == 'undefined') { // this is an error state - might be object though?
@@ -402,32 +403,47 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 	}
 	
 	function end() {
-		if (png.state === null) { // use null as require end marker
-			emit('end');
+		png.state = png.state('end');
+		if (typeof png.state == 'undefined') {
+			png.fail();
 		} else {
-			emit('error'); // or something
+			png.success();
 		}
 		unlisten();
 	}
 	
-	function get(match, len) {
+	function get(len, match, success, ev, acc) {
 		
-		function get2(acc) {
-			var max = len - acc.length;
-			max = (max < vb.length) ? vb.length : max;
-			var bytes = vb.bytes(max);
-			acc.push(bytes);
+		if (ev != 'data') {
+			return;
+		}
+
+		if (typeof acc == 'undefined') {
+			acc = [];
+		}
+
+		var max = len - acc.length;
+		max = (max < vb.length) ? vb.length : max;
+		var bytes = vb.bytes(max);
+		acc.push(bytes);
 			
-			if (acc.length < len) {
-				return function () {return get2(acc);};
-			}
-			// call match and test
+		if (acc.length < len) {
+			return function (ev) {return get(len, match, success, ev, acc);};
 		}
 		
-		get2([]);
+		if (match(acc)) {
+			console.log("chunk ok");
+			return success;
+		}
+		return;
 	}
 	
-	function accept(bytes, success) {
+	function accept(bytes, success, ev) {
+		
+		if (ev != 'data') {
+			return;
+		}
+		
 		var compare = bytes.slice();
 		var c, v;
 		
@@ -441,12 +457,65 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 		}
 		if (compare.length > 0) {
 			console.log("closure");
-			return function() {return accept(compare, success);};
+			return function(ev) {return accept(compare, success, ev);};
 		}
 		return success;
 	}
 	
-	function sig() {return accept(png.signature, png.success);}
+	function chunkend(ev) {
+		if (ev == 'data') {
+			return chunklen;
+		}
+		if (ev == 'end') {
+			return true;
+		}
+	}
+	
+	function chunkcrc(ev) {return get(chunk.length, function(bytes) {
+			if ((to32(bytes) !== png.crc.crc)) {
+				console.log("failed crc");
+				return false;
+			}
+			// now emit a chunk event
+			png.emit(chunk.name, chunk.data);
+			console.log("crc ok");
+			return true;
+		}, chunkend, ev);}
+		
+		
+	// not working as get eats bytes - need diff fn.
+	function chunkdata(ev) {return get(chunk.length, function(bytes) {
+			png.crc.add(vb.bytes(chunk.length));
+			png.crc.finalize();
+			chunk.data = vb.ref(chunk.length);
+			return true;
+		}, chunkcrc, ev);}
+	
+	function chunktype(ev) {return get(4, function(bytes) {
+			var b;
+			for (var i = 0; i < 4; i++) {
+				b = bytes[i];
+				if (b < 65 || (b > 90 && b < 97) || b > 122) {
+					return false;
+				}
+			}
+			chunk.type = bytes;
+			chunk.name = String.fromCharCode.apply(String, bytes);
+			png.crc.start();
+			png.crc.add(bytes);
+			return true;
+		}, chunkdata, ev);}
+
+	function chunklen(ev) {return get(4, function(bytes) {
+			if (bytes[0] & 0x80) { // high bit must not be set
+				return false;
+			}
+			chunk.length = to32(bytes);
+			// probably a good idea to add a smaller length check here...
+			return true;
+		}, chunktype, ev);}
+	
+	function sig(ev) {return accept(png.signature, chunklen, ev);}
 	
 	this.state = sig;
 	
