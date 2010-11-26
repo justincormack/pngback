@@ -369,6 +369,8 @@ function chunk_crc(bytes) {
 // and makes that fn easier to write, just builds vbuf from data, so can still use it, needs to keep in closure
 // then data is another vbuff view of same vbuf?
 
+// enforce IHDR first here too, (and even parse it?)
+
 var pfsm = Object.create(FSM);
 
 pfsm.success = function() {
@@ -445,6 +447,7 @@ cfsm.unavailable = function() { // helper function to remove from available arra
 			this.available.splice(p, 1);
 		}
 	}
+	this.forbidden.push(arguments);
 };
 
 cfsm.addAvailable = function() { // helper function to add if not there
@@ -697,13 +700,16 @@ cfsm.IHDR = {
 		console.log("header: colour type " + d.type);
 		
 		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM'];
+		this.forbidden = [];
 		
 		switch(d.type) {
 			case 0:
 				this.addAvailable('IDAT', 'tRNS', 'bKGD'); // PLTE not allowed
+				this.forbidden.push('PLTE');
 				break;
 			case 4:
 				this.addAvailable('IDAT', 'bKGD'); // PLTE not allowed, no tRNS allowed
+				this.forbidden.push('PLTE', 'tRNS');
 				break;
 			case 3:
 				this.addAvailable('PLTE'); // PLTE required first
@@ -713,6 +719,7 @@ cfsm.IHDR = {
 				break;
 			case 6:
 				this.addAvailable('IDAT', 'PLTE', 'bKGD'); // PLTE optional, no tRNS allowed
+				this.forbidden.push('tRNS');
 				break;
 		}
 	}
@@ -723,10 +730,11 @@ cfsm.PLTE = {
 	state: function(d) {
 		this.emit('PLTE', d);
 		
-		this.paletteLength = d.palette.length; // hIST, tRNS need this for validation
+		this.paletteLength = d.palette.length; // hIST, tRNS need this for validation - remove check now?
 		
 		this.unavailable('iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM');
 		this.addAvailable('bKGD', 'hIST', 'IDAT');
+		
 		switch (this.header.type) {
 			case 4:
 			case 6: // tRNS never allowed if alpha channel exists
@@ -739,8 +747,8 @@ cfsm.PLTE = {
 };
 
 cfsm.IDAT = {
-	parse: function() {
-		return {}; // temporary!!!!!
+	parse: function(data) {
+		return {'data': data};
 	},
 	state: function(d) {
 		this.emit('IDAT', d);
@@ -757,6 +765,7 @@ cfsm.IEND = {
 		this.emit('end');
 		
 		this.available = [];
+		this.forbidden = ['*'];
 	}
 };
 
@@ -991,7 +1000,6 @@ cfsm.reserved = function(type) {
 
 cfsm.chunk = function(type, data) {
 	var name = this.bytesToString(type);
-	var aname = name;
 	
 	console.log("see chunk: " + name);
 	
@@ -1003,17 +1011,26 @@ cfsm.chunk = function(type, data) {
 		if (this.critical(type)) {
 			return this.error("unknown critical chunk type " + name + " not yet handled"); // need to add unknown chunk handlers
 		} else {
-			return; // ignore this chunk - add a handler if you want to handle it. Note technically we allow split IDAT chunks, but thats ok
+			return; // ignore this chunk - add a handler if you want to handle it.
 		}
 	}
 	
-	if (this.available.indexOf(aname) === -1) {
+	/*
+	if (this.available.indexOf(name) === -1) {
 		return this.error("chunk " + name + " not allowed here: " + this.available);
+	} */
+	// testing new forbidden rules
+	if (this.forbidden == '!IHDR' && name !== 'IHDR') {
+		return this.error("IHDR must be first chunk, saw " + name);
+	} else if (this.forbidden == '*') {
+		return this.error("No chunks allowed here"); // I dont think we need this as we terminate ok
+	} else if (this.forbidden.indexOf(name) !== -1) {
+		return this.error("Chunk " + name + " is forbidden here");
 	}
 		
 	// ok we are looking good to go
 	
-	var ci = this[aname];
+	var ci = this[name];
 	
 	var d = (typeof ci.parse == 'function') ? ci.parse.call(this, data) : this.parseField(data, ci.parse);
 	
@@ -1047,6 +1064,7 @@ cfsm.chunk = function(type, data) {
 cfsm.listen = function(emitter) { // change fsm to work like this? ie dont pass the events let us choose
 	//general init
 	this.available = ['IHDR'];
+	this.forbidden = ['!IHDR'];
 	
 	var cfsm = this;
 	emitter.on('end', function () {cfsm.end.call(cfsm);});
