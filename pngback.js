@@ -384,6 +384,7 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 	vb = this.vb;
 	this.crc = Object.create(crc.crc32);
 	var chunk = {};
+	var cont = false; // still data to process, move to next state
 	
 	function unlisten() {
 		stream.removeListener('data', data);
@@ -393,19 +394,25 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 	function data(buf) {
 		vb.data.call(vb, buf);
 		
-		while (typeof png.state == 'function' && vb.length > 0) { // process until data runs out
+		do {
+			cont = true;
+			
+			if (typeof png.state == 'undefined') { // this is an error state - might be object though?
+				unlisten();
+				png.fail();
+				return;
+			}
+			
 			png.state = png.state('data');
-		}
-		
-		if (typeof png.state == 'undefined') { // this is an error state - might be object though?
-			unlisten();
-			png.fail();
-		}
+		} while (cont);
+
 		console.log("waiting for new event - vb length is " + vb.length + " state is " + vb.state);
 	}
 	
 	function end() {
-		png.state = png.state('end');
+		if (typeof png.state == 'function') {
+			png.state = png.state('end');
+		}
 		if (typeof png.state == 'undefined') {
 			png.fail();
 		} else {
@@ -428,6 +435,11 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 		var max = len - acc.length;
 		max = (max > vb.length) ? vb.length : max;
 		acc = acc.concat(vb.bytes(max));
+		vb.eat(max);
+			
+		if (vb.length === 0) {
+			cont = false;
+		}
 			
 		if (acc.length < len) {
 			console.log("get closure: " + acc);
@@ -436,7 +448,6 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 		
 		if (match(acc)) {
 			console.log("chunk ok: " + success);
-			vb.eat(len);
 			return success;
 		}
 		return;
@@ -459,6 +470,11 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 				return;
 			}
 		}
+		
+		if (vb.length === 0) {
+			cont = false;
+		}
+		
 		if (compare.length > 0) {
 			console.log("closure");
 			return function(ev) {return accept(compare, success, ev);};
@@ -476,6 +492,7 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 	}
 	
 	function chunkcrc(ev) {return get(4, function(bytes) {
+			png.crc.finalize();
 			var c = to32(bytes);
 			if (c !== png.crc.crc) {
 				console.log("failed crc: " + c + " vs " +png.crc.crc);
@@ -497,14 +514,19 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 			return;
 		}
 		if (vb.length < chunk.length) {
-			console.log("data closure"); // broken!
+			console.log("data closure");
+			cont = false;
 			return function(ev) {return chunkdata(ev);};
 		}
-		png.crc.add(vb.bytes(chunk.length)); // can we do without copying? ie read from bytes
-		png.crc.finalize();
+		png.crc.add(vb.bytes(chunk.length)); // can we do without copying? ie read directly
 		chunk.data = vb.ref(chunk.length);
 		vb.eat(chunk.length);
 		console.log("eat data: " + chunk.length);
+		
+		if (vb.length === 0) {
+			cont = false;
+		}
+		
 		return chunkcrc;
 	}
 
