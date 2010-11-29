@@ -187,8 +187,9 @@ function utf8ToString(bytes) {
 png = Object.create(emitter);
 
 // move back to parse I think! but in this form
-png.forbidden = { // these are the chunks that are forbidden after other ones
+png.forbidAfter = { // these are the chunks that are forbidden after other ones
 	// corresponds to a weak validation
+	/*  // remove this check - this is parse based.
 	IHDR: function() {
 		this.forbidden = [];
 
@@ -206,10 +207,8 @@ png.forbidden = { // these are the chunks that are forbidden after other ones
 				this.forbidden.push('tRNS');
 			break;
 		}
-	},
-	IEND: function() {
-		this.forbidden = ['*']; // try to remove
-	},
+	},*/
+	IHDR: ['IHDR'],
 	PLTE: ['iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM'],
 	IDAT: ['pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'hIST'],
 	gAMA: ['gAMA'],
@@ -221,7 +220,8 @@ png.forbidden = { // these are the chunks that are forbidden after other ones
 	hIST: ['hIST'],
 	tIME: ['tIME'],
 	iCCP: ['iCCP', 'sRGB'],
-	sRGB: ['iCCP', 'sRGB']
+	sRGB: ['iCCP', 'sRGB'],
+	IEND: ['*']
 };
 
 png.signature = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -234,7 +234,7 @@ png.fail = function() {
 	console.log(this.filename + " is not a png file");
 };
 
-png.stream = function(stream) { // listen on a stream, or something that emits the same events
+png.stream = function(stream) { // listen on a stream
 	var png = this;
 	this.vb = Object.create(vbuf);
 	this.vb.init();
@@ -242,6 +242,8 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 	this.crc = Object.create(crc.crc32);
 	var chunk = {};
 	var cont = false; // still data to process, move to next state
+	var forbidden = [];
+	var first = 'IHDR'; // first chunk flag
 	
 	function unlisten() {
 		stream.removeListener('data', data);
@@ -394,9 +396,32 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 					return false;
 				}
 			}
-			chunk.name = String.fromCharCode.apply(String, bytes);
+			var name = String.fromCharCode.apply(String, bytes);
+			chunk.name = name;
 			
-			console.log("got name chunk: " + chunk.name );
+			console.log("got name chunk: " + name );
+			
+			if (typeof first == 'string' && first !== name) {
+				console.log("first chunk invalid, must be " + first);
+				return false;
+			}
+			first = false;
+			console.log("deleted first, now " + first);
+			
+			if (forbidden.indexOf('*') !== -1) {
+				console.log("chunk after IEND");
+				return false;
+			}
+			
+			if (forbidden.indexOf(name) !== -1) {
+				console.log("chunk " + name + " not allowed here");
+				return false;
+			}
+			
+			if (name in png.forbidAfter) {
+				forbidden.push.apply(Array, png.forbidAfter[name]);
+			}
+			
 			png.crc.start();
 			png.crc.add(bytes);
 			return true;
