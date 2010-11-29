@@ -172,10 +172,18 @@ png.stream = function(stream) { // listen on a stream
 	}
 	
 	function data(buf) {
-		while (buf.length && typeof png.state == 'function') {
+		var ret;
+		
+		while (typeof png.state == 'function' && buf.length) {
 			
 			console.log("data " + buf.length);
-			png.state = png.state('data', buf);
+			ret = png.state('data', buf);
+			if (typeof ret !== 'undefined') {
+				png.state = ret.f;
+				buf = ret.b;
+			} else {
+				png.state = null;
+			}
 		}
 		
 		if (typeof png.state !== 'function') {
@@ -201,6 +209,10 @@ png.stream = function(stream) { // listen on a stream
 	function get(len, match, success, ev, buf, acc) {
 		console.log("get ev " + ev);
 		
+		function again(ev, buf) {
+			return get(len, match, success, ev, buf, acc);
+		}
+		
 		if (ev != 'data') {
 			return;
 		}
@@ -221,12 +233,12 @@ png.stream = function(stream) { // listen on a stream
 		buf = buf.slice(max);
 						
 		if (acc.len < len) {
-			return function (ev, buf) {return get(len, match, success, ev, buf, acc);};
+			return {'b': buf, 'f': again};
 		}
 		
 		if (match(acc)) {
 			console.log("matched");
-			return success;
+			return {'b': buf, 'f': success};
 		}
 		console.log("match failed");
 		return;
@@ -235,16 +247,22 @@ png.stream = function(stream) { // listen on a stream
 	function accept(bytes, success, ev, buf) {
 		console.log("accept " + bytes);
 		
+		var compare;
+		var c, v;
+				
+		function again(ev, buf) {
+			return accept(compare, success, ev, buf);
+		}
+		
 		if (bytes.length === 0) {
-			return success;
+			return {'b': buf, 'f': success};
 		}
 		
 		if (ev != 'data') {
 			return;
 		}
 		
-		var compare = bytes.slice();
-		var c, v;
+		compare = bytes.slice();
 		
 		while (compare.length > 0 && buf.length > 0) {
 			c = compare.shift();
@@ -258,9 +276,9 @@ png.stream = function(stream) { // listen on a stream
 				
 		if (compare.length > 0) {
 			console.log("closure");
-			return function(ev, buf) {return accept(compare, success, ev, buf);};
+			return {'b': buf, 'f': again};
 		}
-		return success;
+		return {'b': buf, 'f': success};
 	}
 	
 	function chunkend(ev, buf) {
@@ -286,6 +304,11 @@ png.stream = function(stream) { // listen on a stream
 		}, chunkend, ev, buf);}
 		
 	function chunkdata(ev, buf, acc, len) {
+		
+		function again(ev, buf) {
+			return chunkdata(ev, buf, acc, len);
+		}
+		
 		if (chunk.length === 0) {
 			return chunkcrc;
 		}
@@ -301,10 +324,6 @@ png.stream = function(stream) { // listen on a stream
 		var max = chunk.length - len;
 		max = (max > buf.length) ? buf.length : max;
 		
-		//var bytes = []; // copy buf to array? actually ok here, as doesnt need any array ops
-		//for (var i = 0; i < max; i++) {
-		//	bytes.push(buf[i]);
-		//}
 		var sl = buf.slice(0, max);
 		png.crc.add(sl);
 		
@@ -314,14 +333,14 @@ png.stream = function(stream) { // listen on a stream
 		
 		if (len < chunk.length) {
 			console.log("data closure");
-			return function(ev, buf) {return chunkdata(ev, buf, acc, len);};
+			return {'b': buf, 'f': again};
 		}
 		
 		chunk.data = acc;
 
 		console.log("data finish");
 		
-		return chunkcrc;
+		return {'b': buf, 'f':chunkcrc};
 	}
 
 	function chunktype(ev, buf) {return get(4, function(bytes) {
@@ -398,13 +417,18 @@ var cfsm = Object.create(emitter); // no need to inherit from FSM!
 
 // this could be done as state driven too, or at least function based not cases, so extensible.
 // pass the functions not the strings then!
+// could do incrementally without converting from buffers, but not much point
 cfsm.parseField = function(data, fields) {
-	var bytes = data.bytes(data.length);
+	var bytes = [];
 	var type, name;
 	var ret = {};
 	var a = [];
 	var i, k, s, z;
 	var fs = fields.slice();
+	
+	for (i = 0; i < data.length; i++) {
+		bytes.push(Array.prototype.slice.call(data[i]));
+	}
 	
 	function zterm() {
 		var p = bytes.indexOf(0);
