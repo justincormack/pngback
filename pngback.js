@@ -29,7 +29,7 @@
 // emit IDAT as you get it, with closure storing rest of len for checksum. Then can get rid of vbuf
 // maybe though we should send buf, offset, len to parse though, not bytes. else extra copy if dont need them. parse just has to add on. then still need some kind of vbuf, but simpler
 // split out the parser into different items that are composed as wanted.
-
+// we dont need to change IDAT though.
 
 
 var events = require('events');
@@ -52,68 +52,6 @@ var emitter = new events.EventEmitter(); // need to init to make this work.
 // Except maybe for IDAT, where we could emit fake chunks, each exactly from one buffer (singleton vbuf)
 
 // ha, buffer supports slice, so just need array!
-
-// attempt to make new vbuf - simple wrapper for array of buffers with offset, length
-
-var vbuf = {
-	init: function() {
-		this.buffers = [];
-		this.offset = 0;
-		this.length = 0;
-	},
-	data: function(buf) { // data designed to work from a stream 'data' event
-		this.buffers.push(buf);
-		this.length += buf.length;
-	},
-	eat: function(len) {
-		if (len === 0) {
-			return;	
-		}
-		if (len > this.length) {
-			len = this.length;
-			}
-			this.offset += len;
-			this.length -= len;
-			while (this.buffers.length !== 0 && this.offset >= this.buffers[0].length) {
-				this.offset -= this.buffers[0].length;
-				this.buffers.shift();
-			}
-	},
-	truncate: function(len) {
-		// truncate this vbuf
-		if (len > this.length) {len = this.length;}
-		var drop = this.length - len;
-		while (this.buffers[this.buffers.length - 1].length <= drop) {
-			drop -= this.buffers[this.buffers.length - 1].length;
-			this.buffers.pop();
-		}
-		this.length = len;
-	},
-	ref: function(len) {
-		// return a truncated vbuf object, can be used to store a reference to the front of stream
-		var trunc = Object.create(this);
-		trunc.buffers = this.buffers.slice(); // need to clone the buffers
-		trunc.offset = this.offset;
-		trunc.length = this.length;
-		trunc.truncate(len);
-		return trunc;
-	},
-	bytes: function(len) {
-		var offset = this.offset;
-		var bytes = [];
-		var buf = 0;
-		if (len > this.length) {len = this.length;}
-		for (var i = 0; i < len; i++) {
-			while (this.buffers[buf].length <= offset) {
-				offset = 0;
-				buf++;
-			}
-			bytes.push(this.buffers[buf][offset++]);
-		}
-		return bytes;
-	}
-};
-
 
 // turn into methods, as are png specific? no, fairly general
 function to32(bytes) {
@@ -223,12 +161,8 @@ png.fail = function() {
 
 png.stream = function(stream) { // listen on a stream
 	var png = this;
-	this.vb = Object.create(vbuf);
-	this.vb.init();
-	vb = this.vb;
 	this.crc = Object.create(crc.crc32);
 	var chunk = {};
-	var cont = false; // still data to process, move to next state
 	var forbidden = [];
 	var first = 'IHDR'; // first chunk flag
 	
@@ -238,19 +172,17 @@ png.stream = function(stream) { // listen on a stream
 	}
 	
 	function data(buf) {
-		vb.data.call(vb, buf);
+		while (buf.length && typeof png.state == 'function') {
+			
+			console.log("data " + buf.length);
+			png.state = png.state('data', buf);
+		}
 		
-		do {
-			cont = true;
-			
-			if (typeof png.state == 'undefined') { // this is an error state - might be object though?
-				unlisten();
-				png.fail();
-				return;
-			}
-			
-			png.state = png.state('data');
-		} while (cont);
+		if (typeof png.state !== 'function') {
+			unlisten();
+			png.fail();
+			return;
+		}
 	}
 	
 	function end() {
@@ -265,7 +197,8 @@ png.stream = function(stream) { // listen on a stream
 		unlisten();
 	}
 	
-	function get(len, match, success, ev, acc) {
+	// note that for get, unlike data we are happy to copy data into array, as we do not send on
+	function get(len, match, success, ev, buf, acc) {
 		console.log("get ev " + ev);
 		
 		if (ev != 'data') {
@@ -277,25 +210,34 @@ png.stream = function(stream) { // listen on a stream
 		}
 
 		var max = len - acc.length;
-		max = (max > vb.length) ? vb.length : max;
-		acc = acc.concat(vb.bytes(max));
-		vb.eat(max);
-			
-		if (vb.length === 0) {
-			cont = false;
+		max = (max > buf.length) ? buf.length : max;
+		
+		// node doesnt seem to have method to convert buffer *to* byte array
+		
+		for (var i = 0; i < max; i++) {
+			acc.push(buf[i]);
 		}
-			
-		if (acc.length < len) {
-			return function (ev) {return get(len, match, success, ev, acc);};
+		
+		buf = buf.slice(max);
+						
+		if (acc.len < len) {
+			return function (ev, buf) {return get(len, match, success, ev, buf, acc);};
 		}
 		
 		if (match(acc)) {
+			console.log("matched");
 			return success;
 		}
+		console.log("match failed");
 		return;
 	}
 	
-	function accept(bytes, success, ev) {
+	function accept(bytes, success, ev, buf) {
+		console.log("accept " + bytes);
+		
+		if (bytes.length === 0) {
+			return success;
+		}
 		
 		if (ev != 'data') {
 			return;
@@ -304,27 +246,24 @@ png.stream = function(stream) { // listen on a stream
 		var compare = bytes.slice();
 		var c, v;
 		
-		while (compare.length > 0 && vb.length > 0) {
+		while (compare.length > 0 && buf.length > 0) {
 			c = compare.shift();
-			v = vb.bytes(1);
-			vb.eat(1);
+			v = buf[0];
+			buf = buf.slice(1);
 			if (c != v) {
+				console.log("mismatch: " + c + " " + v);
 				return;
 			}
 		}
-		
-		if (vb.length === 0) {
-			cont = false;
-		}
-		
+				
 		if (compare.length > 0) {
 			console.log("closure");
-			return function(ev) {return accept(compare, success, ev);};
+			return function(ev, buf) {return accept(compare, success, ev, buf);};
 		}
 		return success;
 	}
 	
-	function chunkend(ev) {
+	function chunkend(ev, buf) {
 		if (ev == 'data') {
 			return chunklen;
 		}
@@ -333,45 +272,59 @@ png.stream = function(stream) { // listen on a stream
 		}
 	}
 	
-	function chunkcrc(ev) {return get(4, function(bytes) {
+	function chunkcrc(ev, buf) {return get(4, function(bytes) {
 			png.crc.finalize();
 			var c = to32(bytes);
 			if (c !== png.crc.crc) {
-				console.log("failed crc: " + c + " vs " +png.crc.crc);
+				console.log("failed crc: " + c + " vs " + png.crc.crc);
 				return false;
 			}
 			// now emit a chunk event
 			png.emit(chunk.name, chunk.data);
 			console.log("crc ok");
 			return true;
-		}, chunkend, ev);}
+		}, chunkend, ev, buf);}
 		
-	// ?Need to redo vb, so the v one is constructed here, just get the buffer in the call....
-	function chunkdata(ev) {
+	function chunkdata(ev, buf, acc, len) {
 		if (chunk.length === 0) {
 			return chunkcrc;
 		}
 		if (ev === 'end') {
 			return;
 		}
-		if (vb.length < chunk.length) {
-			console.log("data closure");
-			cont = false;
-			return function(ev) {return chunkdata(ev);};
-		}
-		png.crc.add(vb.bytes(chunk.length)); // can we do without copying? ie read directly
-		chunk.data = vb.ref(chunk.length);
-		vb.eat(chunk.length);
-		console.log("eat data: " + chunk.length);
 		
-		if (vb.length === 0) {
-			cont = false;
+		if (typeof acc == 'undefined') {
+			acc = [];
+			len = 0;
 		}
+		
+		var max = chunk.length - len;
+		max = (max > buf.length) ? buf.length : max;
+		
+		//var bytes = []; // copy buf to array? actually ok here, as doesnt need any array ops
+		//for (var i = 0; i < max; i++) {
+		//	bytes.push(buf[i]);
+		//}
+		var sl = buf.slice(0, max);
+		png.crc.add(sl);
+		
+		acc.push(sl);
+		len += max;
+		buf = buf.slice(max);
+		
+		if (len < chunk.length) {
+			console.log("data closure");
+			return function(ev, buf) {return chunkdata(ev, buf, acc, len);};
+		}
+		
+		chunk.data = acc;
+
+		console.log("data finish");
 		
 		return chunkcrc;
 	}
 
-	function chunktype(ev) {return get(4, function(bytes) {
+	function chunktype(ev, buf) {return get(4, function(bytes) {
 			var b;
 			for (var i = 0; i < 4; i++) {
 				b = bytes[i];
@@ -412,9 +365,9 @@ png.stream = function(stream) { // listen on a stream
 			png.crc.start();
 			png.crc.add(bytes);
 			return true;
-		}, chunkdata, ev);}
+		}, chunkdata, ev, buf);}
 
-	function chunklen(ev) {return get(4, function(bytes) {
+	function chunklen(ev, buf) {return get(4, function(bytes) {
 			if (bytes[0] & 0x80) { // high bit must not be set
 				console.log("bad chunklen");
 				return false;
@@ -423,9 +376,9 @@ png.stream = function(stream) { // listen on a stream
 			// probably a good idea to add a smaller length check here...
 			console.log("len is " + chunk.length);
 			return true;
-		}, chunktype, ev);}
+		}, chunktype, ev, buf);}
 	
-	function sig(ev) {return accept(png.signature, chunklen, ev);}
+	function sig(ev, buf) {return accept(png.signature, chunklen, ev, buf);}
 	
 	this.state = sig;
 	
@@ -952,7 +905,6 @@ cfsm.listen = function(emitter, chunks) {
 
 
 (function(exports) {
-	exports.vbuf = vbuf;
 	exports.cfsm = cfsm;
 	exports.png = png;
 })(
