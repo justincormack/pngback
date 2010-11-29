@@ -271,62 +271,6 @@ function utf8ToString(bytes) {
 
 /* png specific from here */
 
-// merge chunk len and chunk type? or even all 4! That would be more efficient
-function chunk_len(bytes) {
-	if (bytes[0] & 0x80) { // high bit must not be set
-		return false;
-	}
-	var len = to32(bytes);
-	// probably a good idea to add a smaller length check here...
-	this.chunk_len = len;
-	return true;
-}
-
-function chunk_type(bytes) {
-	var b;
-	for (var i = 0; i < 4; i++) {
-		b = bytes[i];
-		if (b < 65 || (b > 90 && b < 97) || b > 122) {
-			return false;
-		}
-	}
-	this.chunk_type = bytes;
-	this.crc.start();
-	this.crc.add(bytes);
-	return true;
-}
-
-
-// duplicating code here again, need to refactor? chunk_len tied in too much!
-function chunk_data(ev) {
-	if (ev === 'end') {
-		return false;
-	}
-	len = this.chunk_len;
-	vb = this.vb;
-	if (vb.length < len) {
-		return undefined;
-	}
-	this.crc.add(vb.bytes(len));
-	this.crc.finalize();
-	this.chunk_data = vb.ref(len);
-	vb.eat(len);
-	return true;
-}
-
-
-function chunk_crc(bytes) {
-	if ((to32(bytes) !== this.crc.crc)) {
-		return false;
-	}
-	// now emit a chunk event
-	this.emit('chunk', this.chunk_type, this.chunk_data);
-	return true;
-}
-
-
-// redo the low level transport parse from scratch
-
 png = Object.create(emitter);
 
 // move back to parse I think! but in this form
@@ -504,8 +448,7 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 			return true;
 		}, chunkend, ev);}
 		
-	// not going to work either - never returns! Need to redo vb, so the v one is constructed here, just get the buffer in the call....
-	// see code at the top, waiting for empty. closure needs to construct v version. Kind of hybrid/
+	// ?Need to redo vb, so the v one is constructed here, just get the buffer in the call....
 	function chunkdata(ev) {
 		if (chunk.length === 0) {
 			return chunkcrc;
@@ -568,114 +511,7 @@ png.stream = function(stream) { // listen on a stream, or something that emits t
 
 
 
-
-
-
-
-
-
-
-// maybe the pfsm should also pass a reference to the vbuffer of the whole chunk, in case want to send through unchanged.
-// not just the data part, as after all if that is not changed we do not need to eg recalculate crc
-// for some apps of course just want to drop original data
-// and for test roundtripping good
-// easier to do with one chunk fn!
-// and makes that fn easier to write, just builds vbuf from data, so can still use it, needs to keep in closure
-// then data is another vbuff view of same vbuf?
-
-// enforce IHDR first here too, (and even parse it?)
-
-var FSM = Object.create(emitter);
-
-// pass the event (but not emitter) to the function
-// redo this to just pass emitter? we know then which events we need to listen to
-
-// junk this for simple function, which is all it is...
-
-FSM.listen = function(emitter, ev) {
-	var fsm = this;
-	function f() {
-		var args = Array.prototype.slice.call(arguments);
-		args.unshift(ev);
-		fsm.prev = fsm.state;
-		//console.log("event " + args[0]);
-		//console.log("state " + fsm.state);
-		if (typeof fsm.state == 'function') {
-			fsm.state = fsm.state.apply(fsm, args);
-		}
-
-		while (typeof fsm.state == 'function' && fsm.state !== fsm.prev) {
-			fsm.prev = fsm.state;
-			//console.log("internal event state " + fsm.state);
-			fsm.state = fsm.state.call(fsm, 'transition');
-		}
-	}
-	emitter.on(ev, f);
-};
-
-var pfsm = Object.create(FSM);
-
-pfsm.success = function() {
-	console.log(this.filename + " is a png file");
-};
-
-pfsm.fail = function() {
-	console.log(this.filename + " is not a png file");
-};
-
-// pass the success, fail into the create fn!
-pfsm.match_signature = function(ev, arg) {
-	return match.call(this, accept([137, 80, 78, 71, 13, 10, 26, 10]), this.match_chunk_len, this.fail, this.match_signature, ev, arg);
-};
-
-pfsm.match_chunk_len = function(ev, arg) {
-	return match.call(this, get(4, chunk_len), this.match_chunk_type, this.fail, this.match_chunk_len, ev, arg);
-};
-
-pfsm.match_chunk_type = function(ev, arg) {
-	return match.call(this, get(4, chunk_type), this.match_chunk_data, this.fail, this.match_chunk_type, ev, arg);
-};
-	
-pfsm.match_chunk_data = function(ev, arg) {
-	return match.call(this, chunk_data, this.match_chunk_crc, this.fail, this.match_chunk_data, ev, arg);
-};
-	
-pfsm.match_chunk_crc = function(ev, arg) {
-	return match.call(this, get(4, chunk_crc), this.match_eof, this.fail, this.match_chunk_crc, ev, arg);
-	//return get2.call(this, 4, chunk_crc, this.match_eof, this.fail, this.match_chunk_crc, ev, arg);
-};
-	
-function eof(ev) {
-	if (ev === 'end') {
-		this.emit('end');
-		return true;
-	}
-	return (this.vb.length === 0) ? undefined : false;
-}
-
-pfsm.match_eof = function(ev, arg) {
-	return match.call(this, eof, this.success, this.match_chunk_len, this.match_eof, ev, arg);
-};
-
 // some sort of compositional method for putting these together would be nice. Look for methods, etc. Basically a pipe fn that composes.
-
-// remove init fn - just put in starting state and allow clone, as far as is possible anyway
-pfsm.init = function(stream) {
-	this.vb = Object.create(vbuf);
-	this.vb.init();
-	var vb = this.vb;
-	this.crc = Object.create(crc.crc32);
-	this.state = pfsm.match_signature;
-	stream.on('data', function(buf) { // maybe can remove by working directly with buf here not vbuf?
-		vb.data.call(vb, buf);
-	});
-	this.listen(stream, 'data');
-	this.listen(stream, 'end');
-	stream.on('end', function() {
-		stream.removeAllListeners('data');
-		stream.removeAllListeners('end');
-	});
-};
 
 // next layer is parsing
 
@@ -1299,11 +1135,7 @@ cfsm.listen = function(emitter) { // change fsm to work like this? ie dont pass 
 
 
 (function(exports) {
-	exports.FSM = FSM;
 	exports.vbuf = vbuf;
-	exports.accept = accept;
-	exports.match = match;
-	exports.pfsm = pfsm;
 	exports.cfsm = cfsm;
 	exports.png = png;
 })(
