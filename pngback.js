@@ -406,7 +406,6 @@ png.stream = function(stream) { // listen on a stream
 				return false;
 			}
 			first = false;
-			console.log("deleted first, now " + first);
 			
 			if (forbidden.indexOf('*') !== -1) {
 				console.log("chunk after IEND");
@@ -716,29 +715,6 @@ cfsm.IHDR = {
 		
 		console.log("header: colour type " + d.type);
 		
-		this.available = ['tIME', 'zTXt', 'tEXt', 'iTXt', 'pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM'];
-		this.forbidden = [];
-		
-		switch(d.type) {
-			case 0:
-				this.addAvailable('IDAT', 'tRNS', 'bKGD'); // PLTE not allowed
-				this.forbidden.push('PLTE');
-				break;
-			case 4:
-				this.addAvailable('IDAT', 'bKGD'); // PLTE not allowed, no tRNS allowed
-				this.forbidden.push('PLTE', 'tRNS');
-				break;
-			case 3:
-				this.addAvailable('PLTE'); // PLTE required first
-				break;
-			case 2:
-				this.addAvailable('IDAT', 'PLTE', 'tRNS', 'bKGD'); // PLTE optional
-				break;
-			case 6:
-				this.addAvailable('IDAT', 'PLTE', 'bKGD'); // PLTE optional, no tRNS allowed
-				this.forbidden.push('tRNS');
-				break;
-		}
 	}
 };
 
@@ -746,18 +722,6 @@ cfsm.PLTE = {
 	parse: ["palette", "rgb"],
 	state: function(d) {
 		this.emit('PLTE', d);
-		
-		this.addAvailable('bKGD', 'hIST', 'IDAT');
-		this.unavailable('iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM');
-		
-		switch (this.header.type) {
-			case 4:
-			case 6: // tRNS never allowed if alpha channel exists
-				break;
-			default:
-				this.addAvailable('tRNS');
-		}
-
 	}
 };
 
@@ -767,9 +731,6 @@ cfsm.IDAT = {
 	},
 	state: function(d) {
 		this.emit('IDAT', d);
-		
-		this.addAvailable('IEND');
-		this.unavailable('pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'hIST');
 	}
 };
 
@@ -778,9 +739,6 @@ cfsm.IEND = {
 	state: function(d) {
 		this.emit('IEND', d);
 		this.emit('end');
-		
-		this.available = [];
-		this.forbidden = ['*']; // probably dont need
 	}
 };
 
@@ -788,7 +746,6 @@ cfsm.gAMA = {
 	parse: ['gamma', 'float100k'],
 	state: function (d) {
 		this.emit('gAMA', d);		
-		this.unavailable('gAMA');
 	}
 };
 
@@ -824,8 +781,6 @@ cfsm.sBIT = {
 	},
 	state: function(d) {
 		this.emit('sBIT', d);
-		
-		this.unavailable('sBIT');
 	}
 };
 cfsm.bKGD = {
@@ -858,8 +813,6 @@ cfsm.bKGD = {
 	},
 	state: function(d) {
 		this.emit('bKGD', d);
-		
-		this.unavailable('bKGD', 'PLTE');
 	}
 };
 
@@ -881,8 +834,6 @@ cfsm.tRNS = {
 	},
 	state: function(d) {
 		this.emit('tRNS', d);
-		
-		this.unavailable('tRNS', 'PLTE');
 	}
 };
 
@@ -890,24 +841,18 @@ cfsm.cHRM = {
 	parse: ['whiteX', 'float100k', 'whiteY', 'float100k', 'redX', 'float100k', 'redY', 'float100k', 'greenX', 'float100k', 'greenY', 'float100k', 'blueX', 'float100k', 'blueY', 'float100k'],
 	state: function(d) {
 		this.emit('cHRM', d);
-		
-		this.unavailable('cHRM');
 	}
 };
 cfsm.pHYs = {
 	parse: ['pixelsX', 'uint32', 'pixelsY', 'uint32', 'unit', 'uint8'],
 	state: function(d) {
 		this.emit('pHYs', d);
-		
-		this.unavailable('pHYs');
 	}
 };
 cfsm.hIST = {
 	parse: ['frequencies', 'uint16l'],
 	state: function(d) {
 		this.emit('hIST', d);
-		
-		this.unavailable('hIST');
 	}
 };
 cfsm.tIME = {
@@ -923,8 +868,6 @@ cfsm.tIME = {
 	},
 	state: function(d) {
 		this.emit('tIME', d);
-		
-		this.unavailable('tIME');
 	}
 };
 cfsm.tEXt = {
@@ -957,8 +900,6 @@ cfsm.iCCP = {
 	parse: ['name', 'keyword', 'profile', 'zdata'],
 	state: function(d) {
 		this.emit('iCCP', d);
-		
-		this.unavailable('iCCP', 'sRGB');
 	}
 };
 
@@ -971,8 +912,6 @@ cfsm.sRGB = {
 	},
 	state: function(d) {
 		this.emit('sRGB', d);
-		
-		this.unavailable('iCCP', 'sRGB');
 	}
 };
 
@@ -1019,15 +958,7 @@ cfsm.chunk = function(type, data) {
 			return; // ignore this chunk - add a handler if you want to handle it.
 		}
 	}
-	
-	if (this.forbidden == '!IHDR' && name !== 'IHDR') {
-		return this.error("IHDR must be first chunk, saw " + name);
-	} else if (this.forbidden == '*') {
-		return this.error("No chunks allowed here"); // I dont think we need this as we terminate ok
-	} else if (this.forbidden.indexOf(name) !== -1) {
-		return this.error("Chunk " + name + " is forbidden here");
-	}
-		
+			
 	// ok we are looking good to go
 	
 	var ci = this[name];
@@ -1063,8 +994,6 @@ cfsm.chunk = function(type, data) {
 // this is basically the init fn!
 cfsm.listen = function(emitter) { // change fsm to work like this? ie dont pass the events let us choose
 	//general init
-	this.available = ['IHDR'];
-	this.forbidden = ['!IHDR'];
 	
 	var cfsm = this;
 	emitter.on('end', function () {cfsm.end.call(cfsm);});
