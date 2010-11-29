@@ -23,17 +23,19 @@
 // make these the same object, but call different routines, that return an instance
 // need to link all to an info object, that has the state of the current one, eg header
 
+
+// todo: 29 Nov
+// emit event for new chunk types, so downstream can add listener
+// emit IDAT as you get it, with closure storing rest of len for checksum. Then can get rid of vbuf
+// maybe though we should send buf, offset, len to parse though, not bytes. else extra copy if dont need them. parse just has to add on. then still need some kind of vbuf, but simpler
+// split out the parser into different items that are composed as wanted.
+
+
+
 var events = require('events');
 var crc = require('./crc');
 
-var isArray = Array.isArray;
-
 var emitter = new events.EventEmitter(); // need to init to make this work.
-
-// extend eventEmitter to be able to emit an event in a different scope than that of the eventEmitter itself
-events.EventEmitter.prototype.on2 = function(ev, f, scope) {
-	this.on(ev, function() {f.apply(scope, Array.prototype.slice.call(arguments));});
-};
 
 // data object for node buffers, a vector of buffers
 // fix so that is an array of triples: buffer, offset length, not just one offset, length. Fixes edge cases in truncate if then add more... which can do now ended removed
@@ -48,6 +50,10 @@ events.EventEmitter.prototype.on2 = function(ev, f, scope) {
 // move to a single buffer model, with an offset, not vectors.
 // hmm, not good though - means emitting multiple pieces for a single chunk, not one event. So keep vbuf.
 // Except maybe for IDAT, where we could emit fake chunks, each exactly from one buffer (singleton vbuf)
+
+// ha, buffer supports slice, so just need array!
+
+// attempt to make new vbuf - simple wrapper for array of buffers with offset, length
 
 var vbuf = {
 	init: function() {
@@ -189,25 +195,6 @@ png = Object.create(emitter);
 // move back to parse I think! but in this form
 png.forbidAfter = { // these are the chunks that are forbidden after other ones
 	// corresponds to a weak validation
-	/*  // remove this check - this is parse based.
-	IHDR: function() {
-		this.forbidden = [];
-
-		switch(this.header.type) {
-			case 0:
-				this.forbidden.push('PLTE');
-				break;
-			case 2:
-			case 3:
-				break;
-			case 4:
-				this.forbidden.push('PLTE', 'tRNS');
-			break;
-			case 6:
-				this.forbidden.push('tRNS');
-			break;
-		}
-	},*/
 	IHDR: ['IHDR'],
 	PLTE: ['iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM'],
 	IDAT: ['pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'hIST'],
@@ -264,8 +251,6 @@ png.stream = function(stream) { // listen on a stream
 			
 			png.state = png.state('data');
 		} while (cont);
-
-		console.log("waiting for new event - vb length is " + vb.length + " state is " + vb.state);
 	}
 	
 	function end() {
@@ -301,12 +286,10 @@ png.stream = function(stream) { // listen on a stream
 		}
 			
 		if (acc.length < len) {
-			console.log("get closure: " + acc);
 			return function (ev) {return get(len, match, success, ev, acc);};
 		}
 		
 		if (match(acc)) {
-			console.log("chunk ok: " + success);
 			return success;
 		}
 		return;
@@ -396,6 +379,11 @@ png.stream = function(stream) { // listen on a stream
 					return false;
 				}
 			}
+			if (bytes[2] & 0x10 === 0) {
+				console.log("reserved chunk");
+				return false;
+			}
+			
 			var name = String.fromCharCode.apply(String, bytes);
 			chunk.name = name;
 			
@@ -427,7 +415,6 @@ png.stream = function(stream) { // listen on a stream
 		}, chunkdata, ev);}
 
 	function chunklen(ev) {return get(4, function(bytes) {
-		console.log("len bytes " + bytes + " " + bytes[0] + " " + bytes[1] + " " + bytes[2] + " " + bytes[3]);
 			if (bytes[0] & 0x80) { // high bit must not be set
 				console.log("bad chunklen");
 				return false;
@@ -443,7 +430,9 @@ png.stream = function(stream) { // listen on a stream
 	this.state = sig;
 	
 	stream.on('data', data);
-	stream.on('end', end);	
+	stream.on('end', end);
+	
+	return this;
 };
 
 
@@ -454,28 +443,8 @@ png.stream = function(stream) { // listen on a stream
 
 var cfsm = Object.create(emitter); // no need to inherit from FSM!
 
-cfsm.unavailable = function() { // helper function to remove from available array
-	var p;
-	for (var i = 0; i < arguments.length; i++) {
-		p = this.available.indexOf(arguments[i]);
-		if (p !== -1) {
-			this.available.splice(p, 1);
-		}
-	}
-	this.forbidden.push(arguments);
-};
-
-cfsm.addAvailable = function() { // helper function to add if not there
-	var p;
-	for (var i = 0; i < arguments.length; i++) {
-		p = this.available.indexOf(arguments[i]);
-		if (p === -1) {
-			this.available.push(arguments[i]);
-		}
-	}
-};
-
 // this could be done as state driven too, or at least function based not cases, so extensible.
+// pass the functions not the strings then!
 cfsm.parseField = function(data, fields) {
 	var bytes = data.bytes(data.length);
 	var type, name;
@@ -494,8 +463,6 @@ cfsm.parseField = function(data, fields) {
 		
 		return k;
 	}
-	
-	console.log("parse " + fields);
 	
 	while(fs.length > 0) {
 		name = fs.shift();
@@ -727,10 +694,11 @@ cfsm.PLTE = {
 
 cfsm.IDAT = {
 	parse: function(data) {
-		return {'data': data};
+		return {'data': data}; // actually special case?
 	},
 	state: function(d) {
-		this.emit('IDAT', d);
+		this.emit('IDAT', d); // this is possiby the only one that needs to do something else?
+		console.log("need to process IDAT data!");
 	}
 };
 
@@ -924,80 +892,62 @@ cfsm.error = function(msg) {
 	this.emit('error');
 	return;
 };
-cfsm.end = function () {
-	if (this.available.length !== 0) {
-		return this.error("unexpected end of stream");
-	}
-	this.emit('end');
-};
 
-cfsm.bytesToString = function(bytes) {
-	return String.fromCharCode(bytes[0]) + String.fromCharCode(bytes[1]) + String.fromCharCode(bytes[2]) + String.fromCharCode(bytes[3]);
-};
-
-cfsm.critical = function(type) {
-	return type[0] & 0x10 === 0;
-};
-cfsm.reserved = function(type) {
-	return type[2] & 0x10 === 0;
-};
-
-cfsm.chunk = function(type, data) {
-	var name = this.bytesToString(type);
-	
-	console.log("see chunk: " + name);
-	
-	if (this.reserved(type)) {
-		return this.error("chunk " + name + "has lowercase third letter, not supported");
-	}
-	
-	if (typeof this[name] == 'undefined') {
-		if (this.critical(type)) {
-			return this.error("unknown critical chunk type " + name + " not yet handled"); // need to add unknown chunk handlers
-		} else {
-			return; // ignore this chunk - add a handler if you want to handle it.
-		}
-	}
-			
-	// ok we are looking good to go
-	
-	var ci = this[name];
-	
-	var d = (typeof ci.parse == 'function') ? ci.parse.call(this, data) : this.parseField(data, ci.parse);
-	
-	if (typeof d == 'string') {
-		return this.error(d);
-	}
-	
-	console.log("parse returned " + Object.keys(d));
-		
-	if (typeof ci.validate == 'function') {
-		var v = ci.validate.call(this, d);
-	
-		if (typeof v == 'string') {
-			return this.error(v);
-		}
-	}
-	
-	if (typeof ci.state !== 'function') {
-		return this.error("chunk " + name + " has no handler");
-	}
-	
-	var ret = ci.state.call(this, d);
-	
-	if (typeof ret === 'string') {
-		return this.error(ret);
-	}
-};
-
-
-// this is basically the init fn!
-cfsm.listen = function(emitter) { // change fsm to work like this? ie dont pass the events let us choose
-	//general init
-	
+// pass the functions instead?
+cfsm.listen = function(emitter, chunks) {
 	var cfsm = this;
-	emitter.on('end', function () {cfsm.end.call(cfsm);});
-	emitter.on('chunk', function (type, data) {cfsm.chunk.call(cfsm, type, data);});
+	var i;
+	
+	function end() {
+		if (cfsm.available.length !== 0) {
+			return cfsm.error("unexpected end of stream");
+		}
+		cfsm.emit('end');
+	}
+		
+	if (typeof chunks == 'undefined') {
+		chunks = [];
+		for (i in this) {
+			if (typeof this[i] == 'object') {
+				chunks.push(i);
+			}
+		}
+		chunks.push('end');
+		console.log("should listen to " + chunks);
+	}
+	
+	for (i= 0; i < chunks.length; i++) {
+		if (chunks[i] == 'end') {
+			emitter.on('end', end);
+		} else {
+			var ci = cfsm[chunks[i]];
+
+			console.log("listening for " + chunks[i]);
+			emitter.on(chunks[i], function (data) {
+
+				var d = (typeof ci.parse == 'function') ? ci.parse.call(cfsm, data) : cfsm.parseField(data, ci.parse);
+				
+				if (typeof d == 'string') {
+					return cfsm.error(d); // redo error handling
+				}
+
+				if (typeof ci.validate == 'function') {
+					var v = ci.validate.call(cfsm, d);
+
+					if (typeof v == 'string') {
+						return cfsm.error(v);
+					}
+				}
+				if (typeof ci.state == 'function') {
+					var ret = ci.state.call(cfsm, d);
+					if (typeof ret === 'string') {
+						return cfsm.error(ret);
+					}
+				}
+			});
+		}
+	}
+	return this;
 };
 
 

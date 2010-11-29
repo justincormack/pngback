@@ -21,9 +21,14 @@ function test5(filename, stream) {
 
 function test6(filename, stream) {
 	var ping = Object.create(png.png);
+	var cfsm = Object.create(png.cfsm);
 	
+	cfsm.listen(ping);
+		
 	ping.filename = filename;
 	ping.stream(stream);
+	
+
 }
 
 //test1();
