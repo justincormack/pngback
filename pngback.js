@@ -283,7 +283,7 @@ png.stream = function(stream) { // listen on a stream
 	
 	function chunkend(ev, buf) {
 		if (ev == 'data') {
-			return chunklen;
+			return {'b': buf, 'f':chunklen};
 		}
 		if (ev == 'end') {
 			return true;
@@ -310,7 +310,7 @@ png.stream = function(stream) { // listen on a stream
 		}
 		
 		if (chunk.length === 0) {
-			return chunkcrc;
+			return {'b': buf, 'f':chunkcrc};
 		}
 		if (ev === 'end') {
 			return;
