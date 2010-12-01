@@ -923,6 +923,13 @@ cfsm.listen = function(emitter, chunks) {
 	return this;
 };
 
+cfsm.stream = function(stream) {
+	var p = Object.create(png);
+	this.listen(p);
+	p.stream(stream);
+	
+	return this;
+};
 
 (function(exports) {
 	exports.cfsm = cfsm;

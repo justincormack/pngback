@@ -5,31 +5,13 @@ var fs = require('fs');
 var png = require('./pngback');
 var crc = require('./crc');
 
-function test5(filename, stream) {
-	var pfsm = Object.create(png.pfsm);
+function test(filename, stream) {
 	var cfsm = Object.create(png.cfsm);
 	
-	cfsm.listen(pfsm);
-	
-	pfsm.filename = filename;
-	
-	console.log("starting " + filename);
-	
-	pfsm.init(stream);
-	//fsm.on2('finish', sb.finish, sb);
-}
-
-function test6(filename, stream) {
-	var ping = Object.create(png.png);
-	var cfsm = Object.create(png.cfsm);
-	
-	cfsm.listen(ping);
 	cfsm.on('bad', function(msg) {console.log(filename + " error: " + msg);});
 	cfsm.on('end', function() {console.log(filename + " ok");});
 
-	ping.stream(stream);
-	
-
+	cfsm.stream(stream);
 }
 
 //test1();
@@ -51,9 +33,7 @@ function testadler(string) {
 
 process.argv.forEach(function(val, index, array) {
 	if (index > 1) {
-		//test2(fs.ReadStream(val));
-		//test5(val, fs.ReadStream(val));
-		test6(val, fs.ReadStream(val));
+		test(val, fs.ReadStream(val));
 	}
 });
 
