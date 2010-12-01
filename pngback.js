@@ -151,14 +151,6 @@ png.forbidAfter = { // these are the chunks that are forbidden after other ones
 
 png.signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
-png.success = function() {
-	console.log(this.filename + " is a png file");
-};
-
-png.fail = function() {
-	console.log(this.filename + " is not a png file");
-};
-
 png.stream = function(stream) { // listen on a stream
 	var png = this;
 	this.crc = Object.create(crc.crc32);
@@ -173,35 +165,42 @@ png.stream = function(stream) { // listen on a stream
 	
 	function data(buf) {
 		var ret;
+		var msg = '';
 		
 		while (typeof png.state == 'function' && buf.length) {
 			
 			ret = png.state('data', buf);
-			if (typeof ret !== 'undefined') {
+			
+			if (typeof ret == 'object') {
 				png.state = ret.f;
 				buf = ret.b;
 			} else {
 				png.state = null;
+				msg = ret;
 			}
 		}
 		
 		if (typeof png.state !== 'function') {
 			unlisten();
-			png.fail();
+			png.emit('bad', msg);
 			return;
 		}
 	}
 	
 	function end() {
+		var ret;
 		if (typeof png.state == 'function') {
-			png.state = png.state('end');
+			ret = png.state('end');
 		}
-		if (typeof png.state == 'undefined') {
-			png.fail();
-		} else {
-			png.success();
+		if (typeof ret == 'undefined') {
+			ret = "";
 		}
 		unlisten();
+		if (typeof ret == 'string') {
+			png.emit('bad', ret);
+		} else {
+			png.emit('end');
+		}
 	}
 	
 	// note that for get, unlike data we are happy to copy data into array, as we do not send on
@@ -212,7 +211,7 @@ png.stream = function(stream) { // listen on a stream
 		}
 		
 		if (ev != 'data') {
-			return;
+			return "unexpected end of stream";
 		}
 
 		if (typeof acc == 'undefined') {
@@ -230,16 +229,16 @@ png.stream = function(stream) { // listen on a stream
 			return {'b': buf, 'f': again};
 		}
 		
-		if (match(acc)) {
+		var ret = match(acc);
+		
+		if (ret === true) {
 			return {'b': buf, 'f': success};
 		}
-		console.log("match failed");
-		return;
+
+		return ret;
 	}
 	
 	function accept(bytes, success, ev, buf) {
-		console.log("accept " + bytes);
-		
 		var compare;
 		var c, v;
 				
@@ -252,7 +251,7 @@ png.stream = function(stream) { // listen on a stream
 		}
 		
 		if (ev != 'data') {
-			return;
+			return "unexpected end of stream";
 		}
 		
 		compare = bytes.slice();
@@ -262,13 +261,14 @@ png.stream = function(stream) { // listen on a stream
 			v = buf[0];
 			buf = buf.slice(1);
 			if (c != v) {
-				return;
+				return "failed match";
 			}
 		}
 				
 		if (compare.length > 0) {
 			return {'b': buf, 'f': again};
 		}
+		
 		return {'b': buf, 'f': success};
 	}
 	
@@ -285,8 +285,7 @@ png.stream = function(stream) { // listen on a stream
 			png.crc.finalize();
 			var c = to32(bytes);
 			if (c !== png.crc.crc) {
-				console.log("failed crc: " + c + " vs " + png.crc.crc);
-				return false;
+				return "failed crc";
 			}
 			// now emit a chunk event
 			png.emit(chunk.name, chunk.data);
@@ -305,7 +304,7 @@ png.stream = function(stream) { // listen on a stream
 		}
 		
 		if (ev === 'end') {
-			return;
+			return "unexpected end of stream";
 		}
 		
 		if (typeof acc == 'undefined') {
@@ -342,27 +341,23 @@ png.stream = function(stream) { // listen on a stream
 				}
 			}
 			if (bytes[2] & 0x10 === 0) {
-				console.log("reserved chunk");
-				return false;
+				return "reserved chunk in stream";
 			}
 			
 			var name = String.fromCharCode.apply(String, bytes);
 			chunk.name = name;
 			
 			if (typeof first == 'string' && first !== name) {
-				console.log("first chunk invalid, must be " + first);
-				return false;
+				return "first chunk invalid";
 			}
 			first = false;
 			
 			if (forbidden.indexOf('*') !== -1) {
-				console.log("chunk after IEND");
-				return false;
+				return "chunk after IEND";
 			}
 			
 			if (forbidden.indexOf(name) !== -1) {
-				console.log("chunk " + name + " not allowed here");
-				return false;
+				return "chunk " + name + " not allowed here";
 			}
 			
 			if (name in png.forbidAfter) {
@@ -376,8 +371,7 @@ png.stream = function(stream) { // listen on a stream
 
 	function chunklen(ev, buf) {return get(4, function(bytes) {
 			if (bytes[0] & 0x80) { // high bit must not be set
-				console.log("bad chunklen");
-				return false;
+				return "bad chunk length";
 			}
 			chunk.length = to32(bytes);
 			// probably a good idea to add a smaller length check here... to stop DoS, optional
@@ -861,14 +855,24 @@ cfsm.error = function(msg) {
 cfsm.listen = function(emitter, chunks) {
 	var cfsm = this;
 	var i;
+	var fs;
+	
+	function unlisten() {
+		emitter.removeListener('bad', bad);
+		emitter.removeListener('end', end);
+		chunks.map(function(cn, ci) {emitter.removeListener(cn, fs[ci]);});
+	}
 	
 	function end() {
-		if (cfsm.available.length !== 0) {
-			return cfsm.error("unexpected end of stream");
-		}
+		unlisten();
 		cfsm.emit('end');
 	}
-		
+	
+	function bad(msg) {
+		unlisten();
+		cfsm.emit('bad', msg);
+	}
+	
 	if (typeof chunks == 'undefined') {
 		chunks = [];
 		for (i in this) {
@@ -878,7 +882,7 @@ cfsm.listen = function(emitter, chunks) {
 		}
 	}
 	
-	function f(cn, data) {
+	function process(cn, data) {
 		var ci = cfsm[cn];
 
 		console.log("receive event " + cn);
@@ -886,27 +890,35 @@ cfsm.listen = function(emitter, chunks) {
 		var d = (typeof ci.parse == 'function') ? ci.parse.call(cfsm, data) : cfsm.parseField(data, ci.parse);
 		
 		if (typeof d == 'string') {
-			return cfsm.error(d); // redo error handling
+			return bad(d);
 		}
 
 		if (typeof ci.validate == 'function') {
 			var v = ci.validate.call(cfsm, d);
 
 			if (typeof v == 'string') {
-				return cfsm.error(v);
+				return bad(v);
 			}
 		}
 		if (typeof ci.state == 'function') {
 			var ret = ci.state.call(cfsm, d);
 			if (typeof ret === 'string') {
-				return cfsm.error(ret);
+				return bad(ret);
 			}
 		}
 	}
 	
 	emitter.on('end', end);
+	emitter.on('bad', bad);
 	
-	chunks.map(function(cn) {emitter.on(cn, function (data) {f(cn, data);});});
+	fs = chunks.map(function(cn) {
+		function f(data) {
+			process(cn, data);
+		}
+		
+		emitter.on(cn, f);
+		return f;
+	});
 	
 	return this;
 };

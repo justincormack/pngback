@@ -24,8 +24,8 @@ function test6(filename, stream) {
 	var cfsm = Object.create(png.cfsm);
 	
 	cfsm.listen(ping);
-		
-	ping.filename = filename;
+	cfsm.on('bad', function(msg) {console.log(filename + " error: " + msg);});
+
 	ping.stream(stream);
 	
 
