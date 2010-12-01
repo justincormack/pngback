@@ -25,6 +25,7 @@ function test6(filename, stream) {
 	
 	cfsm.listen(ping);
 	cfsm.on('bad', function(msg) {console.log(filename + " error: " + msg);});
+	cfsm.on('end', function() {console.log(filename + " ok");});
 
 	ping.stream(stream);
 	
