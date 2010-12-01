@@ -1,57 +1,9 @@
 // pngback. A PNG library for Javascript
 
-
-// make vbuf just array of buffer, offset, len to simplify
-// get rid of ended - use end events properly, ie get these functions to check for them
-// can stream out buffer data from chunks to next layer out, wg so can start to inflate chunk before checksum
-// make eat the usual behaviour, ie most stuff greedy, return proper closures to continue with the partial results 
-
-// merge all the functions into one big one stops the stupid lack of encapsulation shit, and we can store all the state in the function until we fire event
-
-// cant do what we wanted and cleanup to not use vbuf now, as functions not clean any more, too entangled in match. will redo
-// although actually I still think that for this case, getting all of chunk data is easier, lets not stream partial chunks
-
-// dont make objects reusble - ie no init methods. Make a new one for a new operation. Create prototypes in right state
-
-
-// push chunk names and name validation into first pass, so emit name. 
-// second pass just ordering, and optional if you dont need it. NO - merging this into first but only enforce forbiddens
-// then parsing pass, emits structures - dont listen on ones you dont need, 
-// then higher level parse, eg XMP and image data. (XMP needs parse, IDAT a bit odd)
-// the levels after ordering pass can be compositional rather than listen ie you construct a listener from an array/args
-
-// make these the same object, but call different routines, that return an instance
-// need to link all to an info object, that has the state of the current one, eg header
-
-
-// todo: 29 Nov
-// emit event for new chunk types, so downstream can add listener
-// emit IDAT as you get it, with closure storing rest of len for checksum. Then can get rid of vbuf
-// maybe though we should send buf, offset, len to parse though, not bytes. else extra copy if dont need them. parse just has to add on. then still need some kind of vbuf, but simpler
-// split out the parser into different items that are composed as wanted.
-// we dont need to change IDAT though.
-
-
 var events = require('events');
 var crc = require('./crc');
 
 var emitter = new events.EventEmitter(); // need to init to make this work.
-
-// data object for node buffers, a vector of buffers
-// fix so that is an array of triples: buffer, offset length, not just one offset, length. Fixes edge cases in truncate if then add more... which can do now ended removed
-// hmm, without init all get same buffer! should we make create for our objects?
-
-// 2 options for vbufs: 
-// 1. for use in non IDAT blocks, we basically want to copy data, really want array
-// 2. for IDAT blocks, we want to send a data stream, just with buf chunks (with offset, len though).
-// for IDAT then we would not be able to reconstruct block boundaries. I think thats ok for most apps.
-// ideally we want to store all state on block boundary as a closure. Lets see if we can...
-
-// move to a single buffer model, with an offset, not vectors.
-// hmm, not good though - means emitting multiple pieces for a single chunk, not one event. So keep vbuf.
-// Except maybe for IDAT, where we could emit fake chunks, each exactly from one buffer (singleton vbuf)
-
-// ha, buffer supports slice, so just need array!
 
 // turn into methods, as are png specific? no, fairly general
 function to32(bytes) {
