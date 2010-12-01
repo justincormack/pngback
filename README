@@ -1,0 +1,26 @@
+PNGback
+=======
+
+PNGback is a Javascript library for parsing PNG files, for node.js
+
+Right now it is of Very Little Use(TM) as I have not yet implemented compression/decompression, but it can read PNG files and do some simple stuff on them, like extract (uncompressed!) metadata.
+
+It will shortly be able to write out files as well as read them.
+
+It is completely event driven.
+
+
+
+TODO, in no particular order
+
+1. write out files
+2. better tests
+3. zlib implementation for compression and decompression
+4. smush implementation as example
+5. browser version
+
+
+AUTHOR
+
+Justin Cormack twitter: @justincormack
+
