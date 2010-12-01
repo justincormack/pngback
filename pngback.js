@@ -176,7 +176,6 @@ png.stream = function(stream) { // listen on a stream
 		
 		while (typeof png.state == 'function' && buf.length) {
 			
-			console.log("data " + buf.length);
 			ret = png.state('data', buf);
 			if (typeof ret !== 'undefined') {
 				png.state = ret.f;
@@ -207,7 +206,6 @@ png.stream = function(stream) { // listen on a stream
 	
 	// note that for get, unlike data we are happy to copy data into array, as we do not send on
 	function get(len, match, success, ev, buf, acc) {
-		console.log("get ev " + ev);
 		
 		function again(ev, buf) {
 			return get(len, match, success, ev, buf, acc);
@@ -223,21 +221,16 @@ png.stream = function(stream) { // listen on a stream
 
 		var max = len - acc.length;
 		max = (max > buf.length) ? buf.length : max;
-		
-		// node doesnt seem to have method to convert buffer *to* byte array
-		
-		for (var i = 0; i < max; i++) {
-			acc.push(buf[i]);
-		}
+
+		acc = acc.concat(Array.prototype.slice.call(buf, 0, max));
 		
 		buf = buf.slice(max);
 						
-		if (acc.len < len) {
+		if (acc.length < len) {
 			return {'b': buf, 'f': again};
 		}
 		
 		if (match(acc)) {
-			console.log("matched");
 			return {'b': buf, 'f': success};
 		}
 		console.log("match failed");
@@ -269,13 +262,11 @@ png.stream = function(stream) { // listen on a stream
 			v = buf[0];
 			buf = buf.slice(1);
 			if (c != v) {
-				console.log("mismatch: " + c + " " + v);
 				return;
 			}
 		}
 				
 		if (compare.length > 0) {
-			console.log("closure");
 			return {'b': buf, 'f': again};
 		}
 		return {'b': buf, 'f': success};
@@ -299,7 +290,6 @@ png.stream = function(stream) { // listen on a stream
 			}
 			// now emit a chunk event
 			png.emit(chunk.name, chunk.data);
-			console.log("crc ok");
 			return true;
 		}, chunkend, ev, buf);}
 		
@@ -310,8 +300,10 @@ png.stream = function(stream) { // listen on a stream
 		}
 		
 		if (chunk.length === 0) {
+			chunk.data = [];
 			return {'b': buf, 'f':chunkcrc};
 		}
+		
 		if (ev === 'end') {
 			return;
 		}
@@ -329,19 +321,14 @@ png.stream = function(stream) { // listen on a stream
 		
 		acc.push(sl);
 		
-		console.log("push "+ sl.length);
-		
 		len += max;
 		buf = buf.slice(max);
 		
 		if (len < chunk.length) {
-			console.log("data closure");
 			return {'b': buf, 'f': again};
 		}
 		
 		chunk.data = acc;
-
-		console.log("data finish");
 		
 		return {'b': buf, 'f':chunkcrc};
 	}
@@ -361,8 +348,6 @@ png.stream = function(stream) { // listen on a stream
 			
 			var name = String.fromCharCode.apply(String, bytes);
 			chunk.name = name;
-			
-			console.log("got name chunk: " + name );
 			
 			if (typeof first == 'string' && first !== name) {
 				console.log("first chunk invalid, must be " + first);
@@ -395,8 +380,7 @@ png.stream = function(stream) { // listen on a stream
 				return false;
 			}
 			chunk.length = to32(bytes);
-			// probably a good idea to add a smaller length check here...
-			console.log("len is " + chunk.length);
+			// probably a good idea to add a smaller length check here... to stop DoS, optional
 			return true;
 		}, chunktype, ev, buf);}
 	
@@ -430,7 +414,7 @@ cfsm.parseField = function(data, fields) {
 	var fs = fields.slice();
 	
 	for (i = 0; i < data.length; i++) {
-		bytes.push(Array.prototype.slice.call(data[i]));
+		bytes = bytes.concat(Array.prototype.slice.call(data[i]));
 	}
 	
 	function zterm() {
@@ -892,44 +876,38 @@ cfsm.listen = function(emitter, chunks) {
 				chunks.push(i);
 			}
 		}
-		chunks.push('end');
-		console.log("should listen to " + chunks);
 	}
 	
-	for (i= 0; i < chunks.length; i++) {
-		if (chunks[i] == 'end') {
-			emitter.on('end', end);
-		} else {
-			var cn = chunks[i];
-			var ci = cfsm[cn];
+	function f(cn, data) {
+		var ci = cfsm[cn];
 
-			console.log("listening for " + chunks[i]);
-			emitter.on(chunks[i], function (data) {
+		console.log("receive event " + cn);
 
-				console.log("receive event " + cn);
+		var d = (typeof ci.parse == 'function') ? ci.parse.call(cfsm, data) : cfsm.parseField(data, ci.parse);
+		
+		if (typeof d == 'string') {
+			return cfsm.error(d); // redo error handling
+		}
 
-				var d = (typeof ci.parse == 'function') ? ci.parse.call(cfsm, data) : cfsm.parseField(data, ci.parse);
-				
-				if (typeof d == 'string') {
-					return cfsm.error(d); // redo error handling
-				}
+		if (typeof ci.validate == 'function') {
+			var v = ci.validate.call(cfsm, d);
 
-				if (typeof ci.validate == 'function') {
-					var v = ci.validate.call(cfsm, d);
-
-					if (typeof v == 'string') {
-						return cfsm.error(v);
-					}
-				}
-				if (typeof ci.state == 'function') {
-					var ret = ci.state.call(cfsm, d);
-					if (typeof ret === 'string') {
-						return cfsm.error(ret);
-					}
-				}
-			});
+			if (typeof v == 'string') {
+				return cfsm.error(v);
+			}
+		}
+		if (typeof ci.state == 'function') {
+			var ret = ci.state.call(cfsm, d);
+			if (typeof ret === 'string') {
+				return cfsm.error(ret);
+			}
 		}
 	}
+	
+	emitter.on('end', end);
+	
+	chunks.map(function(cn) {emitter.on(cn, function (data) {f(cn, data);});});
+	
 	return this;
 };
 
