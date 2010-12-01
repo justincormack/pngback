@@ -328,6 +328,9 @@ png.stream = function(stream) { // listen on a stream
 		png.crc.add(sl);
 		
 		acc.push(sl);
+		
+		console.log("push "+ sl.length);
+		
 		len += max;
 		buf = buf.slice(max);
 		
@@ -603,7 +606,7 @@ cfsm.parseField = function(data, fields) {
 		}
 	}
 	if (bytes.length !== 0) {
-		return "too much data";
+		return "too much data: " + bytes.length + " " + fields;
 	}
 	
 	return ret;
@@ -897,10 +900,13 @@ cfsm.listen = function(emitter, chunks) {
 		if (chunks[i] == 'end') {
 			emitter.on('end', end);
 		} else {
-			var ci = cfsm[chunks[i]];
+			var cn = chunks[i];
+			var ci = cfsm[cn];
 
 			console.log("listening for " + chunks[i]);
 			emitter.on(chunks[i], function (data) {
+
+				console.log("receive event " + cn);
 
 				var d = (typeof ci.parse == 'function') ? ci.parse.call(cfsm, data) : cfsm.parseField(data, ci.parse);
 				
