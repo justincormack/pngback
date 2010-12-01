@@ -82,9 +82,8 @@ function utf8ToString(bytes) {
 
 png = Object.create(emitter);
 
-// move back to parse I think! but in this form
 png.forbidAfter = { // these are the chunks that are forbidden after other ones
-	// corresponds to a weak validation
+	// corresponds to a weak validation, not as strict as standards suggests, check the otehr constraints furtehr down
 	IHDR: ['IHDR'],
 	PLTE: ['iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM'],
 	IDAT: ['pHYs', 'sPLT', 'iCCP', 'sRGB', 'sBIT', 'gAMA', 'cHRM', 'tRNS', 'bKGD', 'hIST'],
@@ -103,7 +102,7 @@ png.forbidAfter = { // these are the chunks that are forbidden after other ones
 
 png.signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
-png.stream = function(stream) { // listen on a stream
+png.stream = function(stream) {
 	var png = this;
 	this.crc = Object.create(crc.crc32);
 	var chunk = {};
@@ -340,17 +339,14 @@ png.stream = function(stream) { // listen on a stream
 	return this;
 };
 
+// next layer is parsing of the chunks
 
+var cfsm = Object.create(emitter);
 
-// some sort of compositional method for putting these together would be nice. Look for methods, etc. Basically a pipe fn that composes.
-
-// next layer is parsing
-
-var cfsm = Object.create(emitter); // no need to inherit from FSM!
+cfsm.header = {};
 
 // this could be done as state driven too, or at least function based not cases, so extensible.
 // pass the functions not the strings then!
-// could do incrementally without converting from buffers, but not much point
 cfsm.parseField = function(data, fields) {
 	var bytes = [];
 	var type, name;
@@ -589,42 +585,29 @@ cfsm.IHDR = {
 		this.header = d; // other chunks need to see this header
 		
 		this.emit('IHDR', d); // move to generic code?
-		
-		console.log("header: colour type " + d.type);
-		
 	}
 };
 
 cfsm.PLTE = {
 	parse: ["palette", "rgb"],
-	state: function(d) {
-		this.emit('PLTE', d);
-	}
 };
 
 cfsm.IDAT = {
 	parse: function(data) {
-		return {'data': data}; // actually special case?
+		return {'data': data}; // actually may be a special case
 	},
 	state: function(d) {
 		this.emit('IDAT', d); // this is possiby the only one that needs to do something else?
-		console.log("need to process IDAT data!");
+		// !!!!! process data here
 	}
 };
 
 cfsm.IEND = {
 	parse: [],
-	state: function(d) {
-		this.emit('IEND', d);
-		this.emit('end');
-	}
 };
 
 cfsm.gAMA = {
 	parse: ['gamma', 'float100k'],
-	state: function (d) {
-		this.emit('gAMA', d);		
-	}
 };
 
 cfsm.sBIT = {
@@ -657,9 +640,6 @@ cfsm.sBIT = {
 		}
 		return;
 	},
-	state: function(d) {
-		this.emit('sBIT', d);
-	}
 };
 cfsm.bKGD = {
 	parse: function(data) {
@@ -689,9 +669,6 @@ cfsm.bKGD = {
 		}
 		return;
 	},
-	state: function(d) {
-		this.emit('bKGD', d);
-	}
 };
 
 cfsm.tRNS = {
@@ -710,28 +687,16 @@ cfsm.tRNS = {
 		}
 		return this.parseField(data, p);
 	},
-	state: function(d) {
-		this.emit('tRNS', d);
-	}
 };
 
 cfsm.cHRM = {
 	parse: ['whiteX', 'float100k', 'whiteY', 'float100k', 'redX', 'float100k', 'redY', 'float100k', 'greenX', 'float100k', 'greenY', 'float100k', 'blueX', 'float100k', 'blueY', 'float100k'],
-	state: function(d) {
-		this.emit('cHRM', d);
-	}
 };
 cfsm.pHYs = {
 	parse: ['pixelsX', 'uint32', 'pixelsY', 'uint32', 'unit', 'uint8'],
-	state: function(d) {
-		this.emit('pHYs', d);
-	}
 };
 cfsm.hIST = {
 	parse: ['frequencies', 'uint16l'],
-	state: function(d) {
-		this.emit('hIST', d);
-	}
 };
 cfsm.tIME = {
 	parse: ['year', 'uint16', 'month', 'uint8', 'day', 'uint8', 'hour', 'uint8', 'minute', 'uint8', 'second', 'uint8'],
@@ -744,41 +709,20 @@ cfsm.tIME = {
 			return "invalid days in month";
 		}
 	},
-	state: function(d) {
-		this.emit('tIME', d);
-	}
 };
 cfsm.tEXt = {
 	parse: ['keyword', 'keyword', 'text', 'iso8859-1'],
-	state: function(d) {
-		this.emit('tEXt', d);
-		
-		console.log("text: " + d.keyword + ": " + d.text);
-	}
 };
 cfsm.zTXt = {
 	parse: ['keyword', 'keyword', 'text', 'z-iso8859-1'],
-	state: function(d) {
-		this.emit('zTXt', d);
-		
-		console.log("ztext: " + d.keyword + ": " + d.text);
-	}
 };
 
 cfsm.iTXt = {
 	parse: ['keyword', 'keyword', 'compression', 'z-optional', 'language', 'ascii00', 'translated', 'utf8-0', 'text', 'oz-utf8'],
-	state: function(d) {
-		this.emit('iTXt', d);
-
-		console.log("ztext: " + d.keyword + ": " + d.text);
-	}
 };
 
 cfsm.iCCP = {
 	parse: ['name', 'keyword', 'profile', 'zdata'],
-	state: function(d) {
-		this.emit('iCCP', d);
-	}
 };
 
 cfsm.sRGB = {
@@ -788,19 +732,6 @@ cfsm.sRGB = {
 			return "unknown sRGB intent";
 		}
 	},
-	state: function(d) {
-		this.emit('sRGB', d);
-	}
-};
-
-cfsm.finish = function() {
-	//cleanup listeners?
-};
-cfsm.error = function(msg) {
-	console.log(msg);
-	this.finish(); // not sure need this here?
-	this.emit('error');
-	return;
 };
 
 // pass the functions instead?
@@ -837,8 +768,6 @@ cfsm.listen = function(emitter, chunks) {
 	function process(cn, data) {
 		var ci = cfsm[cn];
 
-		console.log("receive event " + cn);
-
 		var d = (typeof ci.parse == 'function') ? ci.parse.call(cfsm, data) : cfsm.parseField(data, ci.parse);
 		
 		if (typeof d == 'string') {
@@ -857,6 +786,8 @@ cfsm.listen = function(emitter, chunks) {
 			if (typeof ret === 'string') {
 				return bad(ret);
 			}
+		} else { // default behaviour
+			cfsm.emit(cn, d);
 		}
 	}
 	
@@ -883,9 +814,25 @@ cfsm.stream = function(stream) {
 	return this;
 };
 
+// example metadata extraction
+
+metadata = Object.create(emitter);
+
+metadata.stream = function(stream) {
+	var p = Object.create(png);
+	var c = Object.create(cfsm);
+	c.listen(p);
+	this.listen(c, 'tEXT');
+	p.stream(stream);
+	
+	return this;
+};
+
+
+// are these the best names?
 (function(exports) {
-	exports.cfsm = cfsm;
-	exports.png = png;
+	exports.parse = cfsm;
+	exports.chunk = png;
 })(
 
   typeof exports === 'object' ? exports : this

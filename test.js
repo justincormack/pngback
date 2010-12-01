@@ -6,12 +6,12 @@ var png = require('./pngback');
 var crc = require('./crc');
 
 function test(filename, stream) {
-	var cfsm = Object.create(png.cfsm);
+	var p = Object.create(png.parse);
 	
-	cfsm.on('bad', function(msg) {console.log(filename + " error: " + msg);});
-	cfsm.on('end', function() {console.log(filename + " ok");});
+	p.on('bad', function(msg) {console.log(filename + " error: " + msg);});
+	p.on('end', function() {console.log(filename + " ok");});
 
-	cfsm.stream(stream);
+	p.stream(stream);
 }
 
 //test1();
