@@ -641,6 +641,7 @@ cfsm.sBIT = {
 		return;
 	},
 };
+
 cfsm.bKGD = {
 	parse: function(data) {
 	var p;
@@ -818,12 +819,51 @@ cfsm.stream = function(stream) {
 
 metadata = Object.create(emitter);
 
-metadata.stream = function(stream) {
-	var p = Object.create(png);
+metadata.listen = function(emitter, f) {
+	var m = this;
+	m.data = {};
+	
+	function unlisten() {
+		emitter.removeListener('tEXt', txt);
+		emitter.removeListener('iTXt', txt);
+		emitter.removeListener('end', end);
+		emitter.removeListener('bad', bad);
+	}
+	
+	function end() {
+		unlisten();
+		f(m.data); // call the callback. Maybe we should use conventional err args?
+	}
+	
+	function bad(msg) {
+		unlisten(); // do not call callback on bad png
+	}
+	
+	function txt(d) {
+		var k = d.keyword;
+		var v = d.text;
+				
+		if (k in m.data) {
+			if (Array.isArray(m.data[k])) {
+				m.data[k].push(v);
+			} else {
+				m.data[k] = [m.data[k], v];
+			}
+		} else {
+			m.data[k] = v;
+		}
+	}
+	
+	emitter.on('tEXt', txt);
+	emitter.on('iTXt', txt); // add zTXt when working. Compressed iTXt not working now
+	emitter.on('bad', bad);
+	emitter.on('end', end);
+}
+
+metadata.stream = function(stream, f) { // f is the callback
 	var c = Object.create(cfsm);
-	c.listen(p);
-	this.listen(c, 'tEXT');
-	p.stream(stream);
+	this.listen(c, f);
+	c.stream(stream);
 	
 	return this;
 };
@@ -833,6 +873,7 @@ metadata.stream = function(stream) {
 (function(exports) {
 	exports.parse = cfsm;
 	exports.chunk = png;
+	exports.metadata = metadata;
 })(
 
   typeof exports === 'object' ? exports : this
