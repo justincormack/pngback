@@ -823,7 +823,6 @@ cfsm.stream = function(stream) {
 metadata = Object.create(emitter);
 
 metadata.listen = function(emitter, f) {
-	var m = this;
 	data = {};
 	
 	function unlisten() {
