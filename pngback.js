@@ -116,43 +116,34 @@ png.stream = function(stream) {
 	}
 	
 	function data(buf) {
-		var ret;
-		var msg = '';
 		
 		while (typeof png.state == 'function' && buf.length) {
 			
-			ret = png.state('data', buf);
+			var ret = png.state('data', buf);
 			
-			if (typeof ret == 'object') {
-				png.state = ret.f;
-				buf = ret.b;
-			} else {
+			if (typeof ret == 'string') {
+				png.emit('bad', ret);
 				png.state = null;
-				msg = ret;
 			}
+			
+			buf = ret;
 		}
 		
 		if (typeof png.state !== 'function') {
 			unlisten();
-			png.emit('bad', msg);
-			return;
 		}
 	}
 	
 	function end() {
-		var ret;
-		if (typeof png.state == 'function') {
-			ret = png.state('end');
-		}
-		if (typeof ret == 'undefined') {
-			ret = "";
-		}
-		unlisten();
+		var ret = png.state('end');
+			
 		if (typeof ret == 'string') {
 			png.emit('bad', ret);
-		} else {
-			png.emit('end');
+			png.state = null;
 		}
+		
+		unlisten();
+		png.emit('end');
 	}
 	
 	// note that for get, unlike data we are happy to copy data into array, as we do not send on
@@ -178,16 +169,18 @@ png.stream = function(stream) {
 		buf = buf.slice(max);
 						
 		if (acc.length < len) {
-			return {'b': buf, 'f': again};
+			png.state = again;
+			return buf;
 		}
 		
 		var ret = match(acc);
 		
-		if (ret === true) {
-			return {'b': buf, 'f': success};
+		if (typeof ret == 'string') {
+			return ret;
 		}
-
-		return ret;
+		
+		png.state = success;
+		return buf;
 	}
 	
 	function accept(bytes, success, ev, buf) {
@@ -199,7 +192,8 @@ png.stream = function(stream) {
 		}
 		
 		if (bytes.length === 0) {
-			return {'b': buf, 'f': success};
+			png.state = success;
+			return buf;
 		}
 		
 		if (ev != 'data') {
@@ -218,15 +212,18 @@ png.stream = function(stream) {
 		}
 				
 		if (compare.length > 0) {
-			return {'b': buf, 'f': again};
+			png.state = again;
+			return buf;
 		}
 		
-		return {'b': buf, 'f': success};
+		png.state = success;
+		return buf;
 	}
 	
 	function chunkend(ev, buf) {
 		if (ev == 'data') {
-			return {'b': buf, 'f':chunklen};
+			png.state = chunklen;
+			return buf;
 		}
 		if (ev == 'end') {
 			return true;
@@ -252,7 +249,8 @@ png.stream = function(stream) {
 		
 		if (chunk.length === 0) {
 			chunk.data = [];
-			return {'b': buf, 'f':chunkcrc};
+			png.state = chunkcrc;
+			return buf;
 		}
 		
 		if (ev === 'end') {
@@ -276,12 +274,14 @@ png.stream = function(stream) {
 		buf = buf.slice(max);
 		
 		if (len < chunk.length) {
-			return {'b': buf, 'f': again};
+			png.state = again;
+			return buf;
 		}
 		
 		chunk.data = acc;
 		
-		return {'b': buf, 'f':chunkcrc};
+		png.state = chunkcrc;
+		return buf;
 	}
 
 	function chunktype(ev, buf) {return get(4, function(bytes) {
@@ -590,7 +590,7 @@ cfsm.IHDR = {
 };
 
 cfsm.PLTE = {
-	parse: ["palette", "rgb"],
+	parse: ["palette", "rgb"]
 };
 
 cfsm.IDAT = {
@@ -604,11 +604,11 @@ cfsm.IDAT = {
 };
 
 cfsm.IEND = {
-	parse: [],
+	parse: []
 };
 
 cfsm.gAMA = {
-	parse: ['gamma', 'float100k'],
+	parse: ['gamma', 'float100k']
 };
 
 cfsm.sBIT = {
@@ -640,7 +640,7 @@ cfsm.sBIT = {
 			}
 		}
 		return;
-	},
+	}
 };
 
 cfsm.bKGD = {
@@ -670,7 +670,7 @@ cfsm.bKGD = {
 			}
 		}
 		return;
-	},
+	}
 };
 
 cfsm.tRNS = {
@@ -688,17 +688,17 @@ cfsm.tRNS = {
 				break;
 		}
 		return this.parseField(data, p);
-	},
+	}
 };
 
 cfsm.cHRM = {
-	parse: ['whiteX', 'float100k', 'whiteY', 'float100k', 'redX', 'float100k', 'redY', 'float100k', 'greenX', 'float100k', 'greenY', 'float100k', 'blueX', 'float100k', 'blueY', 'float100k'],
+	parse: ['whiteX', 'float100k', 'whiteY', 'float100k', 'redX', 'float100k', 'redY', 'float100k', 'greenX', 'float100k', 'greenY', 'float100k', 'blueX', 'float100k', 'blueY', 'float100k']
 };
 cfsm.pHYs = {
-	parse: ['pixelsX', 'uint32', 'pixelsY', 'uint32', 'unit', 'uint8'],
+	parse: ['pixelsX', 'uint32', 'pixelsY', 'uint32', 'unit', 'uint8']
 };
 cfsm.hIST = {
-	parse: ['frequencies', 'uint16l'],
+	parse: ['frequencies', 'uint16l']
 };
 cfsm.tIME = {
 	parse: ['year', 'uint16', 'month', 'uint8', 'day', 'uint8', 'hour', 'uint8', 'minute', 'uint8', 'second', 'uint8'],
@@ -710,21 +710,21 @@ cfsm.tIME = {
 		if (d.day > 32 - new Date(d.year, d.month, 32).getDate()) {
 			return "invalid days in month";
 		}
-	},
+	}
 };
 cfsm.tEXt = {
-	parse: ['keyword', 'keyword', 'text', 'iso8859-1'],
+	parse: ['keyword', 'keyword', 'text', 'iso8859-1']
 };
 cfsm.zTXt = {
-	parse: ['keyword', 'keyword', 'text', 'z-iso8859-1'],
+	parse: ['keyword', 'keyword', 'text', 'z-iso8859-1']
 };
 
 cfsm.iTXt = {
-	parse: ['keyword', 'keyword', 'compression', 'z-optional', 'language', 'ascii00', 'translated', 'utf8-0', 'text', 'oz-utf8'],
+	parse: ['keyword', 'keyword', 'compression', 'z-optional', 'language', 'ascii00', 'translated', 'utf8-0', 'text', 'oz-utf8']
 };
 
 cfsm.iCCP = {
-	parse: ['name', 'keyword', 'profile', 'zdata'],
+	parse: ['name', 'keyword', 'profile', 'zdata']
 };
 
 cfsm.sRGB = {
@@ -733,7 +733,7 @@ cfsm.sRGB = {
 		if (d.intent > 3) {
 			return "unknown sRGB intent";
 		}
-	},
+	}
 };
 
 // pass the functions instead?
@@ -859,7 +859,7 @@ metadata.listen = function(emitter, f) {
 	emitter.on('iTXt', txt); // add zTXt when working. Compressed iTXt not working now
 	emitter.on('bad', bad);
 	emitter.on('end', end);
-}
+};
 
 metadata.stream = function(stream, f) { // f is the callback
 	var c = Object.create(cfsm);
