@@ -108,8 +108,9 @@ png.read = function(stream) {
 	var crc = Object.create(crc32);
 	var chunk = {};
 	var forbidden = [];
-	var first = 'IHDR'; // first chunk flag
+	var first = 'IHDR';
 	var state;
+	var emitted = [];
 	
 	function unlisten() {
 		stream.removeListener('data', data);
@@ -237,6 +238,13 @@ png.read = function(stream) {
 			if (c !== crc.crc) {
 				return "failed crc";
 			}
+			
+			// if we see a new chunk type, emit a type event
+			if (emitted.indexOf(chunk.name) === -1) {
+				png.emit('type', chunk.name);
+				emitted.push(chunk.name);
+			}
+			
 			// now emit a chunk event
 			png.emit(chunk.name, chunk.data);
 			return true;
@@ -743,10 +751,14 @@ cfsm.listen = function(emitter, chunks) {
 	var cfsm = this;
 	var i;
 	var fs;
+	var typelisten = false;
 	
 	function unlisten() {
 		emitter.removeListener('bad', bad);
 		emitter.removeListener('end', end);
+		if (typelisten) {
+			emitter.removeListener('type', type);
+		}
 		chunks.map(function(cn, ci) {emitter.removeListener(cn, fs[ci]);});
 	}
 	
@@ -760,16 +772,23 @@ cfsm.listen = function(emitter, chunks) {
 		cfsm.emit('bad', msg);
 	}
 	
-	if (typeof chunks == 'undefined') {
-		chunks = [];
-		for (i in this) {
-			if (typeof this[i] == 'object') {
-				chunks.push(i);
-			}
+	function type(name) {
+		function f(data) {
+			process(name, data);
 		}
+		
+		emitter.on(name, f);
+		chunks.push(name);
+		fs.push(f);
 	}
 	
 	function process(cn, data) {
+		
+		if (! (cn in cfsm)) {
+			cfsm.emit('unhandled', cn);
+			return;
+		}
+		
 		var ci = cfsm[cn];
 
 		var d = (typeof ci.parse == 'function') ? ci.parse.call(cfsm, data) : cfsm.parseField(data, ci.parse);
@@ -797,6 +816,12 @@ cfsm.listen = function(emitter, chunks) {
 	
 	emitter.on('end', end);
 	emitter.on('bad', bad);
+	
+	if (typeof chunks == 'undefined') {
+		chunks = [];
+		typelisten = true;
+		emitter.on('type', type);
+	}
 	
 	fs = chunks.map(function(cn) {
 		function f(data) {
