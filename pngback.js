@@ -2,7 +2,7 @@
 // (c) 2010 Justin Cormack
 
 var events = require('events');
-var crc = require('./crc');
+var crc32 = require('./crc').crc32;
 
 var emitter = new events.EventEmitter(); // need to init to make this work.
 
@@ -103,9 +103,9 @@ png.forbidAfter = { // these are the chunks that are forbidden after other ones
 
 png.signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
-png.stream = function(stream) {
+png.read = function(stream) {
 	var png = this;
-	this.crc = Object.create(crc.crc32);
+	var crc = Object.create(crc32);
 	var chunk = {};
 	var forbidden = [];
 	var first = 'IHDR'; // first chunk flag
@@ -231,9 +231,9 @@ png.stream = function(stream) {
 	}
 	
 	function chunkcrc(ev, buf) {return get(4, function(bytes) {
-			png.crc.finalize();
+			crc.finalize();
 			var c = to32(bytes);
-			if (c !== png.crc.crc) {
+			if (c !== crc.crc) {
 				return "failed crc";
 			}
 			// now emit a chunk event
@@ -266,7 +266,7 @@ png.stream = function(stream) {
 		max = (max > buf.length) ? buf.length : max;
 		
 		var sl = buf.slice(0, max);
-		png.crc.add(sl);
+		crc.add(sl);
 		
 		acc.push(sl);
 		
@@ -316,8 +316,8 @@ png.stream = function(stream) {
 				forbidden.push.apply(Array, png.forbidAfter[name]);
 			}
 			
-			png.crc.start();
-			png.crc.add(bytes);
+			crc.start();
+			crc.add(bytes);
 			return true;
 		}, chunkdata, ev, buf);}
 
@@ -341,6 +341,7 @@ png.stream = function(stream) {
 };
 
 // next layer is parsing of the chunks
+// merge into png object
 
 var cfsm = Object.create(emitter);
 
@@ -811,7 +812,7 @@ cfsm.listen = function(emitter, chunks) {
 cfsm.stream = function(stream) {
 	var p = Object.create(png);
 	this.listen(p);
-	p.stream(stream);
+	p.read(stream);
 	
 	return this;
 };
