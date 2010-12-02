@@ -824,7 +824,7 @@ metadata = Object.create(emitter);
 
 metadata.listen = function(emitter, f) {
 	var m = this;
-	m.data = {};
+	data = {};
 	
 	function unlisten() {
 		emitter.removeListener('tEXt', txt);
@@ -835,7 +835,7 @@ metadata.listen = function(emitter, f) {
 	
 	function end() {
 		unlisten();
-		f(m.data); // call the callback. Maybe we should use conventional err args?
+		f(data); // call the callback. Maybe we should use conventional err args?
 	}
 	
 	function bad(msg) {
@@ -846,14 +846,14 @@ metadata.listen = function(emitter, f) {
 		var k = d.keyword;
 		var v = d.text;
 				
-		if (k in m.data) {
-			if (Array.isArray(m.data[k])) {
-				m.data[k].push(v);
+		if (k in data) {
+			if (Array.isArray(data[k])) {
+				data[k].push(v);
 			} else {
-				m.data[k] = [m.data[k], v];
+				data[k] = [data[k], v];
 			}
 		} else {
-			m.data[k] = v;
+			data[k] = v;
 		}
 	}
 	
