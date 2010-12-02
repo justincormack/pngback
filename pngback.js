@@ -109,6 +109,7 @@ png.read = function(stream) {
 	var chunk = {};
 	var forbidden = [];
 	var first = 'IHDR'; // first chunk flag
+	var state;
 	
 	function unlisten() {
 		stream.removeListener('data', data);
@@ -117,29 +118,29 @@ png.read = function(stream) {
 	
 	function data(buf) {
 		
-		while (typeof png.state == 'function' && buf.length) {
+		while (typeof state == 'function' && buf.length) {
 			
-			var ret = png.state('data', buf);
+			var ret = state('data', buf);
 			
 			if (typeof ret == 'string') {
 				png.emit('bad', ret);
-				png.state = null;
+				state = null;
 			}
 			
 			buf = ret;
 		}
 		
-		if (typeof png.state !== 'function') {
+		if (typeof state !== 'function') {
 			unlisten();
 		}
 	}
 	
 	function end() {
-		var ret = png.state('end');
+		var ret = state('end');
 			
 		if (typeof ret == 'string') {
 			png.emit('bad', ret);
-			png.state = null;
+			state = null;
 		}
 		
 		unlisten();
@@ -169,7 +170,7 @@ png.read = function(stream) {
 		buf = buf.slice(max);
 						
 		if (acc.length < len) {
-			png.state = again;
+			state = again;
 			return buf;
 		}
 		
@@ -179,7 +180,7 @@ png.read = function(stream) {
 			return ret;
 		}
 		
-		png.state = success;
+		state = success;
 		return buf;
 	}
 	
@@ -192,7 +193,7 @@ png.read = function(stream) {
 		}
 		
 		if (bytes.length === 0) {
-			png.state = success;
+			state = success;
 			return buf;
 		}
 		
@@ -212,17 +213,17 @@ png.read = function(stream) {
 		}
 				
 		if (compare.length > 0) {
-			png.state = again;
+			state = again;
 			return buf;
 		}
 		
-		png.state = success;
+		state = success;
 		return buf;
 	}
 	
 	function chunkend(ev, buf) {
 		if (ev == 'data') {
-			png.state = chunklen;
+			state = chunklen;
 			return buf;
 		}
 		if (ev == 'end') {
@@ -249,7 +250,7 @@ png.read = function(stream) {
 		
 		if (chunk.length === 0) {
 			chunk.data = [];
-			png.state = chunkcrc;
+			state = chunkcrc;
 			return buf;
 		}
 		
@@ -274,13 +275,13 @@ png.read = function(stream) {
 		buf = buf.slice(max);
 		
 		if (len < chunk.length) {
-			png.state = again;
+			state = again;
 			return buf;
 		}
 		
 		chunk.data = acc;
 		
-		png.state = chunkcrc;
+		state = chunkcrc;
 		return buf;
 	}
 
@@ -332,7 +333,7 @@ png.read = function(stream) {
 	
 	function sig(ev, buf) {return accept(png.signature, chunklen, ev, buf);}
 	
-	this.state = sig;
+	state = sig;
 	
 	stream.on('data', data);
 	stream.on('end', end);
