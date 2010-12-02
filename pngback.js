@@ -1,4 +1,5 @@
 // pngback. A PNG library for Javascript
+// (c) 2010 Justin Cormack
 
 var events = require('events');
 var crc = require('./crc');
