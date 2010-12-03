@@ -1,0 +1,16 @@
+#!/bin/sh
+
+FILE=sample/dante.txt
+
+SUM=`cat $FILE | md5sum | sed 's/ *-//g'`
+
+for c in `seq 1 9`
+do
+	OUT=`cat $FILE | gzip -$c | node gunzip.js | md5sum | sed 's/ *-//g'`
+	if [ $OUT != $SUM ]
+		then
+		echo "bad checksum"
+		exit 1
+	fi
+done
+
