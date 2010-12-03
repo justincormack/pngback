@@ -346,6 +346,9 @@ png.read = function(stream) {
 	stream.on('data', data);
 	stream.on('end', end);
 	
+	this.pause = stream.pause;
+	this.resume = stream.resume;
+	
 	return this;
 };
 
