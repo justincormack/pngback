@@ -20,6 +20,10 @@ function to16(bytes) {
 	return 256 * bytes[1] + bytes[0];
 }
 
+function top16(bytes) {
+	return 256 * bytes[3] + bytes[2];
+}
+
 // pull out get functions into parse library, as used in PNG library as well.
 // issue is that use state from closure at the moment, would need to move to this.state
 var inflate = Object.create(emitter);
@@ -200,16 +204,90 @@ inflate.read = function(stream) {
 			return buf;
 		}
 	
+		function nocompress(ev, buf) {
+			
+			function lennlen(ev, buf) {
+				
+				function check(bytes) {
+										
+					var len = to16(bytes);
+					var nlen = top16(bytes);
+
+					function udata(ev, buf) { // len bytes uncompressed data
+
+						if (len === 0) {
+							state = nextblock;
+							return buf;
+						}
+						if (ev != 'data') {
+							return 'unexpected end of stream';
+						}
+						
+						if (len >= buf.length) {
+							z.emit('data', buf);
+							len -= buf.length;
+							
+							if (len === 0) {
+								state = nextblock;
+							}
+							
+							return [];
+						}
+						z.emit('data', buf.slice(0, len));
+						state = nextblock;
+						return buf.slice(len);
+					}
+
+					if (len !== ~nlen) {
+						return 'uncompressed length does not match ones complement';
+					}
+					state = udata;
+					return buf;
+				}
+				return get(4, check, ev, buf);
+			}
+			
+			function skip(ev, buf) {
+				if (ev != 'data') {
+					return 'unexpected end of stream';
+				}
+				if (b !== 0) { // skip to next byte boundary
+					buf = buf.slice(1);
+					b = 0;
+				}
+				state = lennlen;
+				return buf;
+			}
+
+			return skip;
+		}
+	
 		function header(bits) {
 			bfinal = bits & 1;
 			btype = bits >>> 1;
 			if (btype == 3) {
 				return 'invalid block type';
 			}
+			if (btype === 0) { // no compression
+				state = nocompress;
+				return buf;
+			}
 			return 'code not written yet';
 		}
+		
+		function block(ev, buf) {
+			return getb(3, header, ev, buf);
+		}
+		
+		function nextblock(ev, buf) {
+			if (bfinal) {
+				state = next;
+				return buf;
+			}
+			return block(ev, buf);
+		}
 	
-		return getb(3, header, ev, buf);
+		return block(ev, buf);
 	}
 	
 	function gunzip(ev, buf) {

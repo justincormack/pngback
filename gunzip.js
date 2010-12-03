@@ -12,6 +12,9 @@ function gunzip(stream) {
 	g.on('end', function() {
 		console.log("reached end of stream ok");
 	});
+	g.on('data', function(buf) {
+		console.log("output: " + buf.toString());
+	})
 	
 	g.read(stream);
 }
