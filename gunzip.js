@@ -8,7 +8,10 @@ function gunzip(stream) {
 	
 	g.on('bad', function(msg) {
 		console.log("error: " + msg);
-	})
+	});
+	g.on('end', function() {
+		console.log("reached end of stream ok");
+	});
 	
 	g.read(stream);
 }

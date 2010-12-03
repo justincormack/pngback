@@ -4,6 +4,7 @@
 
 var events = require('events');
 var adler32 = require('./checksum').adler32;
+var crc32 = require('./checksum').crc32;
 
 var emitter = new events.EventEmitter();
 
@@ -112,6 +113,97 @@ inflate.read = function(stream) {
 		return []; // equivalent to an empty buffer; unchanged state
 	}
 	
+	function atend(ev) {
+		if (ev != 'end') {
+			return 'expected end of stream';
+		}
+		z.emit('end');
+		unlisten();
+	}
+	
+	function uncompress(winSize, next, ev, buf) {
+		var b = 0; // bit position
+		
+		function again(ev, buf) {
+			return uncompress(winSize, next, ev, buf);
+		}
+	
+		function getb(len, match, ev, buf, acc, acclen) {
+			
+			function again(ev, buf) {
+				return getb(len, match, ev, buf, acc, acclen);
+			}
+			
+			function mask(b) {
+				return (1 << (b + 1)) - 1;
+			}
+			
+			if (ev != 'data') {
+				return 'unexpected end of stream';
+			}
+
+			if (typeof acc == 'undefined') {
+				acc = 0;
+				acclen = 0;
+			}
+			
+			var max = len - acclen;
+			var maxb = buf.length * 8 - b;
+			max = (max > maxb) ? maxb : max;
+
+			var i = 0;
+			
+			// first pull the bits out of the first possibly partial byte
+			var bs = (max < 8 - b) ? max : 8 - b;
+			acc |= ((buf[i] >>> b) & mask(bs)) << acclen;
+			acclen += bs;
+			b += bs;
+
+			if (b == 8) {
+				i++;
+				b = 0;
+			}
+			
+			// now get the whole bytes
+			while (bs - maxb > 8) {
+				acc |= buf[i++] << acclen; // needs sign correction after 31 bits
+				acclen += 8;
+				bs += 8;
+			}
+			
+			// now the remainder
+			if (bs - maxb > 0) {
+				var diff = bs - maxb;
+				acc |= (buf[i] & mask(diff)) << acclen;
+				acclen += diff;
+				bs += diff;
+				b += diff;
+			}
+			
+			if (i > 0) {
+				buf = buf.slice(i);
+			}
+
+			if (acclen < len) {
+				state = again;
+				return buf;
+			}
+
+			var ret = match(acc);
+
+			if (typeof ret == 'string') {
+				return ret;
+			}
+
+			state = ret;
+			return buf;
+		}
+	
+	
+	
+		
+	}
+	
 	function gunzip(ev, buf) {
 		// var ftext; // unused
 		var fhcrc;
@@ -119,18 +211,23 @@ inflate.read = function(stream) {
 		var fname;
 		var fcomment;
 		
+		function trailer(ev, buf) {
+			function check(bytes) { // does not check crc yet
+				return atend;
+			}
+			return get(8, check, ev, buf);
+		}
+		
 		function compressed(ev, buf) {
-			console.log("got to compressed!");
-			
-			return [];
+			return uncompress(32768, trailer, ev, buf);
 		}
 		
 		function hcrc(ev, buf) {
-			function checkcrc(bytes) {
+			function check(bytes) {
 				// not yet implementing checks
 				return compressed;
 			}
-			return get(2, checkcrc, ev, buf);
+			return get(2, check, ev, buf);
 		}
 		
 		function comment(ev, buf) {
