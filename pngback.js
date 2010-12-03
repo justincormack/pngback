@@ -35,6 +35,7 @@ function asciiToString(k) {
 	return String.fromCharCode.apply(String, k);
 }
 
+// there is built in code in node for this I think, at least from buffers
 function utf8ToString(bytes) {
 	var i = 0;
 	var string = "";
@@ -81,7 +82,7 @@ function utf8ToString(bytes) {
 
 /* png specific from here */
 
-png = Object.create(emitter);
+var png = Object.create(emitter);
 
 png.forbidAfter = { // these are the chunks that are forbidden after other ones
 	// corresponds to a weak validation, not as strict as standards suggests, check the otehr constraints furtehr down
@@ -118,9 +119,7 @@ png.read = function(stream) {
 	}
 	
 	function data(buf) {
-		
 		while (typeof state == 'function' && buf.length) {
-			
 			var ret = state('data', buf);
 			
 			if (typeof ret == 'string') {
@@ -149,10 +148,10 @@ png.read = function(stream) {
 	}
 	
 	// note that for get, unlike data we are happy to copy data into array, as we do not send on
-	function get(len, match, success, ev, buf, acc) {
+	function get(len, match, ev, buf, acc) {
 		
 		function again(ev, buf) {
-			return get(len, match, success, ev, buf, acc);
+			return get(len, match, ev, buf, acc);
 		}
 		
 		if (ev != 'data') {
@@ -181,10 +180,11 @@ png.read = function(stream) {
 			return ret;
 		}
 		
-		state = success;
+		state = ret;
 		return buf;
 	}
 	
+	// we only use this in one place, could just use get and a match function that compares
 	function accept(bytes, success, ev, buf) {
 		var compare;
 		var c, v;
@@ -247,8 +247,8 @@ png.read = function(stream) {
 			
 			// now emit a chunk event
 			png.emit(chunk.name, chunk.data);
-			return true;
-		}, chunkend, ev, buf);}
+			return chunkend;
+		}, ev, buf);}
 		
 	function chunkdata(ev, buf, acc, len) {
 		
@@ -327,8 +327,8 @@ png.read = function(stream) {
 			
 			crc.start();
 			crc.add(bytes);
-			return true;
-		}, chunkdata, ev, buf);}
+			return chunkdata;
+		}, ev, buf);}
 
 	function chunklen(ev, buf) {return get(4, function(bytes) {
 			if (bytes[0] & 0x80) { // high bit must not be set
@@ -336,8 +336,8 @@ png.read = function(stream) {
 			}
 			chunk.length = to32(bytes);
 			// probably a good idea to add a smaller length check here... to stop DoS, optional
-			return true;
-		}, chunktype, ev, buf);}
+			return chunktype;
+		}, ev, buf);}
 	
 	function sig(ev, buf) {return accept(png.signature, chunklen, ev, buf);}
 	
