@@ -9,7 +9,7 @@ var crc32 = require('./checksum').crc32;
 var emitter = new events.EventEmitter();
 
 // note little-endian unlike PNG
-// turn into local functions?
+// turn into local functions or library
 function to32(bytes) {
 	var c = (bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes [0];
 	c = (c < 0) ? 0x100000000 + c: c;

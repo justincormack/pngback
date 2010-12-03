@@ -1,0 +1,30 @@
+var events = require('events');
+var fs = require('fs');
+
+var deflate = require('./deflate.js').deflate;
+
+function gzip(stream, out) {
+	var g = Object.create(deflate);
+		
+	g.on('data', function(buf) {
+		var written = stream.write(buf);
+		if (! written) {
+			stream.pause();
+			out.once('drain', function() {
+				stream.resume();
+			});
+		}
+	})
+	
+	g.read(stream);
+}
+
+if (process.argv.length == 2) {
+	gzip(process.openStdin(), process.stdout);
+} else {
+	process.argv.forEach(function(val, index, array) { // should unzip to files as gzip usually does
+		if (index > 1) {
+			gzip(fs.ReadStream(val), process.stdout);
+		}
+	});
+}
