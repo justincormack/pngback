@@ -123,6 +123,7 @@ inflate.read = function(stream) {
 	
 	function uncompress(winSize, next, ev, buf) {
 		var b = 0; // bit position
+		var bfinal = false;
 		
 		function again(ev, buf) {
 			return uncompress(winSize, next, ev, buf);
@@ -172,8 +173,8 @@ inflate.read = function(stream) {
 			}
 			
 			// now the remainder
-			if (bs - maxb > 0) {
-				var diff = bs - maxb;
+			var diff = bs - maxb;
+			if (diff > 0) {
 				acc |= (buf[i] & mask(diff)) << acclen;
 				acclen += diff;
 				bs += diff;
@@ -199,9 +200,16 @@ inflate.read = function(stream) {
 			return buf;
 		}
 	
+		function header(bits) {
+			bfinal = bits & 1;
+			btype = bits >>> 1;
+			if (btype == 3) {
+				return 'invalid block type';
+			}
+			return 'code not written yet';
+		}
 	
-	
-		
+		return getb(3, header, ev, buf);
 	}
 	
 	function gunzip(ev, buf) {
