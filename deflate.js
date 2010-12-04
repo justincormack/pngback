@@ -14,6 +14,10 @@ function from32(n) {
 	return [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
 }
 
+/*function from16(n) {
+	return [n & 255, (n >>> 8) & 255];
+}*/
+
 var deflate = Object.create(emitter);
 
 deflate.read = function(stream) {
@@ -42,21 +46,31 @@ deflate.read = function(stream) {
 	}
 	
 	function write(buf) {
+		// change to have just a queue of unwritten stuff? rather than joining?
+		// need to deal with buffers larger than 64k here, or before.
+		// needs a large rework
 		
 		if (typeof buf !== 'undefined') {
+			var len = buf.length;
+			var nlen = ~len + 0x100000000;
 			out.push(bfinal); // other bits are 00 ie uncompressed
-			out.push(from32(buf.length));
-			out.push(from32(~buf.length));
+			out.push(len & 255, (len >>> 8) & 255);
+			out.push(nlen & 255, (nlen >>> 8) & 255);
 		} else {
 			buf = [];
 		}
-		var ob = new Buffer(out.length);
+		
+		//console.log("out buf " + buf.length + " " + out);
+		
+		var ob = new Buffer(out.length + buf.length);
+		
+		for (var i = 0; i < out.length; i++) {
+			ob[i] = out[i];
+		}
+		buf.copy(ob, out.length, 0);
+		
 		z.emit('data', ob);
 		out = [];
-
-		if (buf.length) {
-			z.emit('data', buf)
-		}
 	}
 	
 	function block(next, ev, buf) {
@@ -85,7 +99,12 @@ deflate.read = function(stream) {
 			write();
 		}
 		
-		block(trailer, ev, buf);
+		function next(ev, buf) {
+			block(trailer, ev, buf);
+		}
+		
+		state = next;
+		next(ev, buf);
 	}
 	
 	
@@ -94,8 +113,8 @@ deflate.read = function(stream) {
 	stream.on('data', data);
 	stream.on('end', end);
 	
-	this.pause = function() {stream.pause()};
-	this.resume = function() {stream.resume()};
+	this.pause = function() {stream.pause();};
+	this.resume = function() {stream.resume();};
 	
 	return this;
 };

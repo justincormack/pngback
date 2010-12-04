@@ -212,7 +212,8 @@ inflate.read = function(stream) {
 										
 					var len = to16(bytes);
 					var nlen = top16(bytes);
-
+					var nnlen = (~nlen + 0x100000000) & 0xffff;
+					
 					function udata(ev, buf) { // len bytes uncompressed data
 
 						if (len === 0) {
@@ -238,12 +239,14 @@ inflate.read = function(stream) {
 						return buf.slice(len);
 					}
 
-					if (len !== ~nlen) {
-						return 'uncompressed length does not match ones complement';
+					if (len !== nnlen) {
+						return 'uncompressed length does not match ones complement ' + len + " " + nlen;
 					}
-					state = udata;
-					return buf;
+					return udata;
 				}
+				
+				console.log("lennlen");
+				
 				return get(4, check, ev, buf);
 			}
 			
@@ -259,7 +262,7 @@ inflate.read = function(stream) {
 				return buf;
 			}
 
-			return skip;
+			return skip(ev, buf);
 		}
 	
 		function header(bits) {
@@ -269,8 +272,7 @@ inflate.read = function(stream) {
 				return 'invalid block type';
 			}
 			if (btype === 0) { // no compression
-				state = nocompress;
-				return buf;
+				return nocompress;
 			}
 			return 'code not written yet';
 		}

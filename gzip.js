@@ -7,14 +7,18 @@ function gzip(stream, out) {
 	var g = Object.create(deflate);
 		
 	g.on('data', function(buf) {
-		var written = stream.write(buf);
+		var written = out.write(buf);
 		if (! written) {
-			stream.pause();
+			if (stream.readable) {
+				stream.pause();
+			}
 			out.once('drain', function() {
-				stream.resume();
+				if (stream.readable) {
+					stream.resume();
+				}
 			});
 		}
-	})
+	});
 	
 	g.read(stream);
 }
