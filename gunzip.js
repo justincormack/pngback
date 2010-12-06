@@ -3,28 +3,32 @@ var fs = require('fs');
 
 var inflate = require('./inflate.js').inflate;
 
-function gunzip(stream) {
+function gunzip(stream, out) {
 	var g = Object.create(inflate);
 	
-	g.on('bad', function(msg) {
-		console.log("error: " + msg);
-	});
-	g.on('end', function() {
-		console.log("reached end of stream ok");
-	});
 	g.on('data', function(buf) {
-		console.log("output: " + buf.toString());
-	})
+		var written = out.write(buf);
+		if (! written) {
+			if (stream.readable) {
+				stream.pause();
+			}
+			out.once('drain', function() {
+				if (stream.readable) {
+					stream.resume();
+				}
+			});
+		}
+	});
 	
 	g.read(stream);
 }
 
 if (process.argv.length == 2) {
-	gunzip(process.openStdin());
+	gunzip(process.openStdin(), process.stdout);
 } else {
 	process.argv.forEach(function(val, index, array) { // should unzip to files as gunzip usually does
 		if (index > 1) {
-			gunzip(fs.ReadStream(val));
+			gunzip(fs.ReadStream(val), process.stdout);
 		}
 	});
 }

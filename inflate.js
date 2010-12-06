@@ -245,8 +245,6 @@ inflate.read = function(stream) {
 					return udata;
 				}
 				
-				console.log("lennlen");
-				
 				return get(4, check, ev, buf);
 			}
 			
@@ -387,8 +385,6 @@ inflate.read = function(stream) {
 			fextra = (flg >>> 2) & 1;
 			fname = (flg >>> 3) & 1;
 			fcomment = (flg >>> 4) & 1;
-		
-			console.log("flags: fhcrc " + fhcrc + " fextra " + fextra + " fname " + fname + " fcomment " + fcomment);
 		
 			if (fextra) {
 				return extra;
