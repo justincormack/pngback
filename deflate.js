@@ -60,8 +60,6 @@ deflate.read = function(stream) {
 			buf = [];
 		}
 		
-		//console.log("out buf " + buf.length + " " + out);
-		
 		var ob = new Buffer(out.length + buf.length);
 		
 		for (var i = 0; i < out.length; i++) {
@@ -77,7 +75,7 @@ deflate.read = function(stream) {
 		if (ev == 'end') {
 			bfinal = 1;
 			write(prev);
-			state = next;
+			next(ev);
 			return;
 		}
 		if (buf.length === 0) {
@@ -93,10 +91,10 @@ deflate.read = function(stream) {
 	function gzip(ev, buf) {
 		out = [31, 139, 8, 0, 0, 0, 0, 0, 4, 255]; // minimal header, no flags set, no mtime
 		
-		function trailer(ev, buf) {
+		function trailer(ev) {			
 			out.push(from32(crc));
 			out.push(from32(isize));
-			write();
+			write(prev);			
 		}
 		
 		function next(ev, buf) {

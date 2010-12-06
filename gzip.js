@@ -3,6 +3,7 @@ var fs = require('fs');
 
 var deflate = require('./deflate.js').deflate;
 
+// this is basically util.pump, could use instead.
 function gzip(stream, out) {
 	var g = Object.create(deflate);
 		

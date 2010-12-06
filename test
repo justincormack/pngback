@@ -4,7 +4,7 @@ FILE=sample/dante.txt
 
 SUM=`cat $FILE | md5sum | sed 's/ *-//g'`
 
-OUT=`cat $FILE | node gzip.js | md5sum | sed 's/ *-//g'`
+OUT=`cat $FILE | node gzip.js | gunzip | md5sum | sed 's/ *-//g'`
 if [ $OUT != $SUM ]
 	then
 	echo "bad checksum on gzip"
