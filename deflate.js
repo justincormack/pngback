@@ -34,7 +34,10 @@ deflate.read = function(stream) {
 		stream.removeListener('end', end);	
 	}
 	
-	function data(buf) {		
+	function data(buf) {
+		isize += buf.length;
+		crc.add(buf);
+		
 		state('data', buf);
 	}
 	
@@ -45,27 +48,32 @@ deflate.read = function(stream) {
 		z.emit('end');
 	}
 	
-	function write(buf) {
+	function write(buf, trail) {
 		// change to have just a queue of unwritten stuff? rather than joining?
 		// need to deal with buffers larger than 64k here, or before.
-		// needs a large rework
+		// needs a rework somewhere to fix, maybe not here
 		
-		if (typeof buf !== 'undefined') {
-			var len = buf.length;
-			var nlen = ~len + 0x100000000;
-			out.push(bfinal); // other bits are 00 ie uncompressed
-			out.push(len & 255, (len >>> 8) & 255);
-			out.push(nlen & 255, (nlen >>> 8) & 255);
-		} else {
-			buf = [];
+		var i;
+		if (typeof trail == 'undefined') {
+			trail = [];
 		}
+		var len = buf.length;
+		var nlen = ~len + 0x100000000;
+		out.push(bfinal); // other bits are 00 ie uncompressed
+		out.push(len & 255, (len >>> 8) & 255);
+		out.push(nlen & 255, (nlen >>> 8) & 255);
 		
-		var ob = new Buffer(out.length + buf.length);
+		var ob = new Buffer(out.length + buf.length + trail.length);
 		
-		for (var i = 0; i < out.length; i++) {
+		for (i = 0; i < out.length; i++) {
 			ob[i] = out[i];
 		}
-		buf.copy(ob, out.length, 0);
+		if (buf.length) {
+			buf.copy(ob, out.length, 0);
+		}
+		for (i = 0; i < trail.length; i++) {
+			ob[i + out.length + buf.length] = trail[i];
+		}
 		
 		z.emit('data', ob);
 		out = [];
@@ -74,8 +82,7 @@ deflate.read = function(stream) {
 	function block(next, ev, buf) {
 		if (ev == 'end') {
 			bfinal = 1;
-			write(prev);
-			next(ev);
+			next(ev); // note this is responsible for writing out last block. Messy. Maybe tidy when do compress output
 			return;
 		}
 		if (buf.length === 0) {
@@ -91,16 +98,18 @@ deflate.read = function(stream) {
 	function gzip(ev, buf) {
 		out = [31, 139, 8, 0, 0, 0, 0, 0, 4, 255]; // minimal header, no flags set, no mtime
 		
-		function trailer(ev) {			
-			out.push(from32(crc));
-			out.push(from32(isize));
-			write(prev);			
+		function trailer(ev) {
+			var csum = crc.finalize();
+			var trail = from32(csum).concat(from32(isize));
+
+			write(prev, trail);
 		}
 		
 		function next(ev, buf) {
 			block(trailer, ev, buf);
 		}
 		
+		crc.start();
 		state = next;
 		next(ev, buf);
 	}
