@@ -109,13 +109,13 @@ deflate.read = function(stream) {
 			block(trailer, ev, buf);
 		}
 		
-		crc.start();
 		state = next;
 		next(ev, buf);
 	}
 	
 	
 	state = gzip;
+	crc.start();
 	
 	stream.on('data', data);
 	stream.on('end', end);
