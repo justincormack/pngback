@@ -6,7 +6,7 @@ var crc32 = require('./crc').crc32;
 
 var emitter = new events.EventEmitter(); // need to init to make this work.
 
-// turn into methods, as are png specific? no, fairly general
+// turn into methods, as are png specific? no, fairly general or general library
 function to32(bytes) {
 	var c = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes [3];
 	c = (c < 0) ? 0x100000000 + c: c;
@@ -155,7 +155,7 @@ png.read = function(stream) {
 		}
 		
 		if (ev != 'data') {
-			return "unexpected end of stream";
+			return 'unexpected end of stream';
 		}
 
 		if (typeof acc == 'undefined') {
