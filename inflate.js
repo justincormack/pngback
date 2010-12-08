@@ -272,7 +272,7 @@ inflate.read = function(stream) {
 			if (btype === 0) { // no compression
 				return nocompress;
 			}
-			return 'code not written yet';
+			return 'code for type ' + btype + ' not written yet';
 		}
 		
 		function block(ev, buf) {

@@ -19,7 +19,11 @@ function gunzip(stream, out) {
 			});
 		}
 	});
-	
+
+	g.on('bad', function(msg) {
+		console.log(msg);
+	});	
+
 	g.read(stream);
 }
 

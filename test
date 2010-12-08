@@ -3,6 +3,7 @@
 FILE=sample/dante.txt
 
 SUM=`cat $FILE | md5sum | sed 's/ *-//g'`
+ZSUM=`cat /dev/null | md5sum | sed 's/ *-//g'`
 
 OUT=`cat $FILE | node gzip.js | gunzip | md5sum | sed 's/ *-//g'`
 if [ $OUT != $SUM ]
@@ -15,6 +16,13 @@ OUT=`cat $FILE | node gzip.js | node gunzip.js | md5sum | sed 's/ *-//g'`
 if [ $OUT != $SUM ]
 	then
 	echo "bad checksum on gzip.js | gunzip.js"
+	exit 1
+fi
+
+OUT=`cat /dev/null | gzip | node gunzip.js | md5sum | sed 's/ *-//g'`
+if [ $OUT != $ZSUM ]
+	then
+	echo "bad checksum on null gzip | gunzip.js"
 	exit 1
 fi
 
