@@ -24,6 +24,57 @@ function top16(bytes) {
 	return 256 * bytes[3] + bytes[2];
 }
 
+// Huffman coding functions
+
+var huff = {
+	repeat: function(x, c, a) {
+		if (typeof a == 'undefined') {
+			a = [];
+		}
+		for (var i = 0; i < c; i++) {
+				a.push(x);
+			}
+		return a;
+	},
+	expand: function(a) {
+		var ret = [];
+		while (a.length) {
+			var h = a.pop();
+			this.repeat(h.bits, h.length, ret);
+		}
+		return ret;
+	},
+	type1: function() {
+		return expand([
+			{bits: 8, length: 144},
+			{bits: 9, length: 255 - 144},
+			{bits: 7, length: 279 - 256},
+			{bits: 8, length: 287 - 280}
+		]);
+	},
+	init: function(bl) {
+		var max = 0;
+		var i = 0;
+		for (i = 0; i < bl.length; i++) {
+			max = (bl[i] > max) ? bl[i] : max;
+		}
+		var blcount = this.repeat(0, max + 1); // initialize with zeros
+		for (i = 0; i < bl.length; i++) {
+			blcount[bl[i]]++;
+		}
+		var code = 0;
+		var nextcode = [];
+		for (bits = 1; bits < max; bits++) {
+			code = (code + blcount[bits - 1]) << 1;
+			nextcode[bits] = code;
+		}
+	},
+
+
+
+
+};
+
 // pull out get functions into parse library, as used in PNG library as well.
 // issue is that use state from closure at the moment, would need to move to this.state
 var inflate = Object.create(emitter);
