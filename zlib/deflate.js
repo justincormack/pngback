@@ -5,8 +5,7 @@
 // note that so far deflate is just using the uncompressed storage method, which while correct is not useful for anything except testing
 
 var events = require('events');
-var adler32 = require('./checksum').adler32;
-var crc32 = require('./checksum').crc32;
+var crc32 = require('../checksum/crc').crc32;
 
 var emitter = new events.EventEmitter();
 

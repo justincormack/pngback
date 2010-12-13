@@ -3,8 +3,7 @@
 // (c) 2010 Justin Cormack
 
 var events = require('events');
-var adler32 = require('./checksum').adler32;
-var crc32 = require('./checksum').crc32;
+var crc32 = require('../checksum/crc').crc32;
 
 var emitter = new events.EventEmitter();
 
