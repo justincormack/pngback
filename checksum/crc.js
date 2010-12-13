@@ -1,5 +1,7 @@
 /* crc checks */
 
+(function(exports) {
+
 var crc32 = {
 	seed: 0xedb88320,
 	crc: 0xffffffff,
@@ -104,10 +106,8 @@ var adler32 = {
 };
 
 
-(function(exports) {
+
 	exports.crc32 = crc32;
 	exports.adler32 = adler32;
-})(
+})(typeof (exports === 'object') ? exports : this._crc = {});
 
-  typeof exports === 'object' ? exports : this
-);

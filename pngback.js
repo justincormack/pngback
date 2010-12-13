@@ -1,5 +1,4 @@
-// pngback. A PNG library for Javascript
-// (c) 2010 Justin Cormack
+(function(exports) {
 
 var events = require('events');
 var crc32 = require('./checksum/crc').crc32;
@@ -792,9 +791,6 @@ metadata.stream = function(stream, f) { // f is the callback
 	exports.parse = cfsm;
 	exports.chunk = png;
 	exports.metadata = metadata;
-})(
-
-  typeof exports === 'object' ? exports : this
-);
+})(typeof (exports === 'object') ? exports : this._png = {});
 
 

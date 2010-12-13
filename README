@@ -9,6 +9,7 @@ It will shortly be able to write out files as well as read them.
 
 It is completely event driven.
 
+The zlib implementation is in progress. May add native support.
 
 
 TODO, in no particular order

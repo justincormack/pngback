@@ -1,3 +1,7 @@
+// generic parse functions
+
+(function(exports) {
+
 var events = require('events');
 
 var emitter = new events.EventEmitter(); // need to init to make this work.
@@ -214,10 +218,9 @@ parse.getb = function(len, match, ev, buf, acc, acclen) {
 	return buf;
 };
 
-(function(exports) {
-	exports.parse = parse;
-})(
 
-  typeof exports === 'object' ? exports : this
-);
+	exports.parse = parse;
+
+})(typeof (exports === 'object') ? exports : this._parse = {});
+
 
