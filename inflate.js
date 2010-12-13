@@ -76,7 +76,6 @@ var huff = {
 };
 
 // pull out get functions into parse library, as used in PNG library as well.
-// issue is that use state from closure at the moment, would need to move to this.state
 var inflate = Object.create(emitter);
 
 inflate.read = function(stream) {
