@@ -2,7 +2,7 @@
 // (c) 2010 Justin Cormack
 
 var events = require('events');
-var crc32 = require('./crc').crc32;
+var crc32 = require('./checksum/crc').crc32;
 
 var emitter = new events.EventEmitter(); // need to init to make this work.
 
