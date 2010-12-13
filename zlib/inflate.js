@@ -108,78 +108,7 @@ inflate.read = function(stream) {
 		function again(ev, buf) {
 			return uncompress(winSize, next, ev, buf);
 		}
-	
-		function getb(len, match, ev, buf, acc, acclen) { // move to generic code
-			
-			function again(ev, buf) {
-				return getb(len, match, ev, buf, acc, acclen);
-			}
-			
-			function mask(b) {
-				return (1 << (b + 1)) - 1;
-			}
-			
-			if (ev != 'data') {
-				return 'unexpected end of stream';
-			}
-
-			if (typeof acc == 'undefined') {
-				acc = 0;
-				acclen = 0;
-			}
-			
-			var max = len - acclen;
-			var maxb = buf.length * 8 - b;
-			max = (max > maxb) ? maxb : max;
-
-			var i = 0;
-			
-			// first pull the bits out of the first possibly partial byte
-			var bs = (max < 8 - b) ? max : 8 - b;
-			acc |= ((buf[i] >>> b) & mask(bs)) << acclen;
-			acclen += bs;
-			b += bs;
-
-			if (b == 8) {
-				i++;
-				b = 0;
-			}
-			
-			// now get the whole bytes
-			while (bs - maxb > 8) {
-				acc |= buf[i++] << acclen; // needs sign correction after 31 bits
-				acclen += 8;
-				bs += 8;
-			}
-			
-			// now the remainder
-			var diff = bs - maxb;
-			if (diff > 0) {
-				acc |= (buf[i] & mask(diff)) << acclen;
-				acclen += diff;
-				bs += diff;
-				b += diff;
-			}
-			
-			if (i > 0) {
-				buf = buf.slice(i);
-			}
-
-			if (acclen < len) {
-				z.state = again;
-				return buf;
-			}
-
-			var ret = match(acc);
-
-			if (typeof ret == 'string') {
-				return ret;
-			}
-
-			z.state = ret;
-			return buf;
-		}
-	
+		
 		function nocompress(ev, buf) {
 			
 			function lennlen(ev, buf) {
