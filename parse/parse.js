@@ -37,6 +37,7 @@ parse.listen = function(stream) {
 	return this;
 };
 
+// the current deflate functions here are simpler, could have both in different versions
 parse.data = function(buf) {
 	while (typeof this.state == 'function' && buf.length) {
 		var ret = this.state('data', buf);
@@ -141,6 +142,7 @@ parse.accept = function accept(bytes, success, ev, buf) {
 	return buf;
 };
 
+// get bits
 parse.getb = function(len, match, ev, buf, acc, acclen) {
 			
 	function again(ev, buf) {
@@ -211,11 +213,6 @@ parse.getb = function(len, match, ev, buf, acc, acclen) {
 	this.state = ret;
 	return buf;
 };
-
-
-
-
-
 
 (function(exports) {
 	exports.parse = parse;

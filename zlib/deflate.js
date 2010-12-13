@@ -4,10 +4,8 @@
 
 // note that so far deflate is just using the uncompressed storage method, which while correct is not useful for anything except testing
 
-var events = require('events');
 var crc32 = require('../checksum/crc').crc32;
-
-var emitter = new events.EventEmitter();
+var parse = require('../parse/parse').parse;
 
 function from32(n) {
 	return [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
@@ -17,35 +15,29 @@ function from32(n) {
 	return [n & 255, (n >>> 8) & 255];
 }*/
 
-var deflate = Object.create(emitter);
+var deflate = Object.create(parse);
 
 deflate.read = function(stream) {
 	var z = this;
-	var state;
 	var out;
 	var prev = [];
 	var crc = Object.create(crc32);
 	var isize = 0;
 	var bfinal = 0;
-	
-	function unlisten() {
-		stream.removeListener('data', data);
-		stream.removeListener('end', end);	
-	}
-	
-	function data(buf) {
+		
+	this.data = function(buf) {
 		isize += buf.length;
 		crc.add(buf);
 		
-		state('data', buf);
-	}
+		this.state('data', buf);
+	};
 	
-	function end() {
-		state('end');
+	this.end = function() {
+		this.state('end');
 
-		unlisten();
-		z.emit('end');
-	}
+		this.unlisten();
+		this.emit('end');
+	};
 	
 	function write(buf, trail) {
 		// change to have just a queue of unwritten stuff? rather than joining?
@@ -108,19 +100,15 @@ deflate.read = function(stream) {
 			block(trailer, ev, buf);
 		}
 		
-		state = next;
+		z.state = next;
 		next(ev, buf);
 	}
 	
-	state = gzip;
+	this.state = gzip;
 	crc.start();
 	
-	stream.on('data', data);
-	stream.on('end', end);
-        
-	this.pause = function() {stream.pause();};
-	this.resume = function() {stream.resume();};
-	
+	this.listen(stream);
+
 	return this;
 };
 
