@@ -459,8 +459,8 @@ inflate.read = function(stream) {
 	stream.on('data', data);
 	stream.on('end', end);
 	
-	this.pause = stream.pause;
-	this.resume = stream.resume;
+	this.pause = function() {stream.pause();};
+	this.resume = function() {stream.resume();};
 	
 	return this;	
 };

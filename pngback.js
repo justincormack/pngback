@@ -82,7 +82,146 @@ function utf8ToString(bytes) {
 
 /* png specific from here */
 
-var png = Object.create(emitter);
+var parse = Object.create(emitter);
+
+parse.listen = function(stream) {
+	var p = this;
+
+	function data(ev) {
+		p.data.call(p, ev);
+	}
+
+	function end() {
+		p.end.call(p);
+	}
+
+	function unlisten() {
+		stream.removeListener('data', data);
+		stream.removeListener('end', end);
+	}
+
+	function pause() {
+		stream.pause();
+	}
+
+	function resume() {
+		stream.resume();
+	}
+
+	stream.on('data', data);
+	stream.on('end', end);
+	this.unlisten = unlisten;
+	this.pause = pause;
+	this.resume = resume;
+};
+
+parse.data = function(buf) {
+	while (typeof this.state == 'function' && buf.length) {
+		var ret = this.state('data', buf);
+			
+		if (typeof ret == 'string') {
+			this.emit('bad', ret);
+			this.state = null;
+		}
+			
+		buf = ret;
+	}
+		
+	if (typeof this.state !== 'function') {
+		this.unlisten();
+	}
+};
+	
+parse.end = function() {
+	if (typeof this.state == 'function') {
+		var ret = this.state('end');
+			
+		if (typeof ret == 'string') {
+			this.emit('bad', ret);
+			this.state = null;
+		}
+
+		this.unlisten();
+	} else {console.log("already ended: " + this.state);}
+	this.emit('end');
+};
+
+parse.get = function(len, match, ev, buf, acc) {
+		
+	function again(ev, buf) {
+		return this.get(len, match, ev, buf, acc);
+	}
+		
+	if (ev != 'data') {
+		return 'unexpected end of stream in get';
+	}
+
+	if (typeof acc == 'undefined') {
+		acc = [];
+	}
+
+	var max = len - acc.length;
+	max = (max > buf.length) ? buf.length : max;
+
+	acc = acc.concat(Array.prototype.slice.call(buf, 0, max));
+		
+	buf = buf.slice(max);
+						
+	if (acc.length < len) {
+		this.state = again;
+		return buf;
+	}
+
+	var ret = match(acc);
+	
+	if (typeof ret == 'string') {
+		return ret;
+	}
+		
+	this.state = ret;
+	return buf;
+};
+	
+// we only use this in one place, could just use get and a match function that compares
+parse.accept = function accept(bytes, success, ev, buf) {
+	var compare;
+	var c, v;
+				
+	function again(ev, buf) {
+		return this.accept(compare, success, ev, buf);
+	}
+		
+	if (bytes.length === 0) {
+		this.state = success;
+		return buf;
+	}
+		
+	if (ev != 'data') {
+		return 'unexpected end of stream in accept';
+	}
+		
+	compare = bytes.slice();
+		
+	while (compare.length > 0 && buf.length > 0) {
+		c = compare.shift();
+		v = buf[0];
+		buf = buf.slice(1);
+		if (c != v) {
+			return 'failed match';
+		}
+	}
+				
+	if (compare.length > 0) {
+		this.state = again;
+		return buf;
+	}
+		
+	this.state = success;
+	return buf;
+};
+
+var png = Object.create(parse);
+
 
 png.forbidAfter = { // these are the chunks that are forbidden after other ones
 	// corresponds to a weak validation, not as strict as standards suggests, check the otehr constraints furtehr down
@@ -110,121 +249,11 @@ png.read = function(stream) {
 	var chunk = {};
 	var forbidden = [];
 	var first = 'IHDR';
-	var state;
 	var emitted = [];
 	
-	function unlisten() {
-		stream.removeListener('data', data);
-		stream.removeListener('end', end);	
-	}
-	
-	function data(buf) {
-		while (typeof state == 'function' && buf.length) {
-			var ret = state('data', buf);
-			
-			if (typeof ret == 'string') {
-				png.emit('bad', ret);
-				state = null;
-			}
-			
-			buf = ret;
-		}
-		
-		if (typeof state !== 'function') {
-			unlisten();
-		}
-	}
-	
-	function end() {
-		var ret = state('end');
-			
-		if (typeof ret == 'string') {
-			png.emit('bad', ret);
-			state = null;
-		}
-		
-		unlisten();
-		png.emit('end');
-	}
-	
-	// note that for get, unlike data we are happy to copy data into array, as we do not send on
-	function get(len, match, ev, buf, acc) {
-		
-		function again(ev, buf) {
-			return get(len, match, ev, buf, acc);
-		}
-		
-		if (ev != 'data') {
-			return 'unexpected end of stream';
-		}
-
-		if (typeof acc == 'undefined') {
-			acc = [];
-		}
-
-		var max = len - acc.length;
-		max = (max > buf.length) ? buf.length : max;
-
-		acc = acc.concat(Array.prototype.slice.call(buf, 0, max));
-		
-		buf = buf.slice(max);
-						
-		if (acc.length < len) {
-			state = again;
-			return buf;
-		}
-		
-		var ret = match(acc);
-		
-		if (typeof ret == 'string') {
-			return ret;
-		}
-		
-		state = ret;
-		return buf;
-	}
-	
-	// we only use this in one place, could just use get and a match function that compares
-	function accept(bytes, success, ev, buf) {
-		var compare;
-		var c, v;
-				
-		function again(ev, buf) {
-			return accept(compare, success, ev, buf);
-		}
-		
-		if (bytes.length === 0) {
-			state = success;
-			return buf;
-		}
-		
-		if (ev != 'data') {
-			return "unexpected end of stream";
-		}
-		
-		compare = bytes.slice();
-		
-		while (compare.length > 0 && buf.length > 0) {
-			c = compare.shift();
-			v = buf[0];
-			buf = buf.slice(1);
-			if (c != v) {
-				return "failed match";
-			}
-		}
-				
-		if (compare.length > 0) {
-			state = again;
-			return buf;
-		}
-		
-		state = success;
-		return buf;
-	}
-	
-	function chunkend(ev, buf) {
+	function chunkend(ev, buf) { // this should be refactored to be generic, like get, as deals with state
 		if (ev == 'data') {
-			state = chunklen;
+			this.state = chunklen;
 			return buf;
 		}
 		if (ev == 'end') {
@@ -232,7 +261,7 @@ png.read = function(stream) {
 		}
 	}
 	
-	function chunkcrc(ev, buf) {return get(4, function(bytes) {
+	function chunkcrc(ev, buf) {return png.get(4, function(bytes) {
 			crc.finalize();
 			var c = to32(bytes);
 			if (c !== crc.crc) {
@@ -250,7 +279,7 @@ png.read = function(stream) {
 			return chunkend;
 		}, ev, buf);}
 		
-	function chunkdata(ev, buf, acc, len) {
+	function chunkdata(ev, buf, acc, len) { // this should be refactored to be generic, like get, as deals with state
 		
 		function again(ev, buf) {
 			return chunkdata(ev, buf, acc, len);
@@ -258,12 +287,12 @@ png.read = function(stream) {
 		
 		if (chunk.length === 0) {
 			chunk.data = [];
-			state = chunkcrc;
+			this.state = chunkcrc;
 			return buf;
 		}
 		
 		if (ev === 'end') {
-			return "unexpected end of stream";
+			return 'unexpected end of stream in chunkdata';
 		}
 		
 		if (typeof acc == 'undefined') {
@@ -283,17 +312,17 @@ png.read = function(stream) {
 		buf = buf.slice(max);
 		
 		if (len < chunk.length) {
-			state = again;
+			this.state = again;
 			return buf;
 		}
 		
 		chunk.data = acc;
 		
-		state = chunkcrc;
+		this.state = chunkcrc;
 		return buf;
 	}
 
-	function chunktype(ev, buf) {return get(4, function(bytes) {
+	function chunktype(ev, buf) {return png.get(4, function(bytes) {
 			var b;
 			for (var i = 0; i < 4; i++) {
 				b = bytes[i];
@@ -302,14 +331,14 @@ png.read = function(stream) {
 				}
 			}
 			if (bytes[2] & 0x10 === 0) {
-				return "reserved chunk in stream";
+				return 'reserved chunk in stream';
 			}
 			
 			var name = String.fromCharCode.apply(String, bytes);
 			chunk.name = name;
 			
 			if (typeof first == 'string' && first !== name) {
-				return "first chunk invalid";
+				return 'first chunk invalid';
 			}
 			first = false;
 			
@@ -318,7 +347,7 @@ png.read = function(stream) {
 			}
 			
 			if (forbidden.indexOf(name) !== -1) {
-				return "chunk " + name + " not allowed here";
+				return 'chunk ' + name + ' not allowed here';
 			}
 			
 			if (name in png.forbidAfter) {
@@ -330,25 +359,20 @@ png.read = function(stream) {
 			return chunkdata;
 		}, ev, buf);}
 
-	function chunklen(ev, buf) {return get(4, function(bytes) {
+	function chunklen(ev, buf) {return png.get(4, function(bytes) {
 			if (bytes[0] & 0x80) { // high bit must not be set
-				return "bad chunk length";
+				return 'bad chunk length';
 			}
 			chunk.length = to32(bytes);
 			// probably a good idea to add a smaller length check here... to stop DoS, optional
 			return chunktype;
 		}, ev, buf);}
 	
-	function sig(ev, buf) {return accept(png.signature, chunklen, ev, buf);}
+	function sig(ev, buf) {return png.accept(png.signature, chunklen, ev, buf);}
 	
-	state = sig;
-	
-	stream.on('data', data);
-	stream.on('end', end);
-	
-	this.pause = stream.pause;
-	this.resume = stream.resume;
-	
+	this.listen(stream);
+	this.state = sig;
+		
 	return this;
 };
 
