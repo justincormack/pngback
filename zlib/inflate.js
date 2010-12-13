@@ -2,10 +2,8 @@
 // A compression/decompression library for Javascript
 // (c) 2010 Justin Cormack
 
-var events = require('events');
 var crc32 = require('../checksum/crc').crc32;
-
-var emitter = new events.EventEmitter();
+var parse = require('../parse/parse').parse;
 
 // note little-endian unlike PNG
 // turn into local functions or library
@@ -74,83 +72,12 @@ var huff = {
 
 };
 
-// pull out get functions into parse library, as used in PNG library as well.
-var inflate = Object.create(emitter);
+var inflate = Object.create(parse);
 
 inflate.read = function(stream) {
 	var z = this;
-	var state;
-	
-	function unlisten() {
-		stream.removeListener('data', data);
-		stream.removeListener('end', end);	
-	}
-	
-	function data(buf) {		
-		while (typeof state == 'function' && buf.length) {
-			var ret = state('data', buf);
-			
-			if (typeof ret == 'string') {
-				z.emit('bad', ret);
-				state = null;
-			}
-			
-			buf = ret;
-		}
-		
-		if (typeof state !== 'function') {
-			unlisten();
-		}
-	}
-	
-	function end() {
-		var ret = state('end');
-			
-		if (typeof ret == 'string') {
-			z.emit('bad', ret);
-			state = null;
-		}
-		
-		unlisten();
-		z.emit('end');
-	}
-	
-	function get(len, match, ev, buf, acc) {
-		
-		function again(ev, buf) {
-			return get(len, match, ev, buf, acc);
-		}
-		
-		if (ev != 'data') {
-			return 'unexpected end of stream';
-		}
+	var get = this.get;
 
-		if (typeof acc == 'undefined') {
-			acc = [];
-		}
-
-		var max = len - acc.length;
-		max = (max > buf.length) ? buf.length : max;
-
-		acc = acc.concat(Array.prototype.slice.call(buf, 0, max));
-		
-		buf = buf.slice(max);
-						
-		if (acc.length < len) {
-			state = again;
-			return buf;
-		}
-		
-		var ret = match(acc);
-		
-		if (typeof ret == 'string') {
-			return ret;
-		}
-		
-		state = ret;
-		return buf;
-	}
-	
 	function zerot(match, ev, buf) { // zero terminated string; we will need result to check crc
 		
 		if (ev != 'data') {
@@ -159,7 +86,7 @@ inflate.read = function(stream) {
 		
 		for (var i = 0; i < buf.length; i++) {
 			if (buf[i] === 0) {
-				state = match();
+				z.state = match();
 				return buf.slice(i + 1);
 			}
 		}
@@ -171,7 +98,7 @@ inflate.read = function(stream) {
 			return 'expected end of stream';
 		}
 		z.emit('end');
-		unlisten();
+		z.unlisten();
 	}
 	
 	function uncompress(winSize, next, ev, buf) {
@@ -182,7 +109,7 @@ inflate.read = function(stream) {
 			return uncompress(winSize, next, ev, buf);
 		}
 	
-		function getb(len, match, ev, buf, acc, acclen) {
+		function getb(len, match, ev, buf, acc, acclen) { // move to generic code
 			
 			function again(ev, buf) {
 				return getb(len, match, ev, buf, acc, acclen);
@@ -239,7 +166,7 @@ inflate.read = function(stream) {
 			}
 
 			if (acclen < len) {
-				state = again;
+				z.state = again;
 				return buf;
 			}
 
@@ -249,7 +176,7 @@ inflate.read = function(stream) {
 				return ret;
 			}
 
-			state = ret;
+			z.state = ret;
 			return buf;
 		}
 	
@@ -266,7 +193,7 @@ inflate.read = function(stream) {
 					function udata(ev, buf) { // len bytes uncompressed data
 
 						if (len === 0) {
-							state = nextblock;
+							z.state = nextblock;
 							return buf;
 						}
 						if (ev != 'data') {
@@ -278,13 +205,13 @@ inflate.read = function(stream) {
 							len -= buf.length;
 							
 							if (len === 0) {
-								state = nextblock;
+								z.state = nextblock;
 							}
 							
 							return [];
 						}
 						z.emit('data', buf.slice(0, len));
-						state = nextblock;
+						z.state = nextblock;
 						return buf.slice(len);
 					}
 
@@ -305,7 +232,7 @@ inflate.read = function(stream) {
 					buf = buf.slice(1);
 					b = 0;
 				}
-				state = lennlen;
+				z.state = lennlen;
 				return buf;
 			}
 
@@ -330,7 +257,7 @@ inflate.read = function(stream) {
 		
 		function nextblock(ev, buf) {
 			if (bfinal) {
-				state = next;
+				z.state = next;
 				return buf;
 			}
 			return block(ev, buf);
@@ -456,11 +383,7 @@ inflate.read = function(stream) {
 	
 	state = gunzip;
 	
-	stream.on('data', data);
-	stream.on('end', end);
-	
-	this.pause = function() {stream.pause();};
-	this.resume = function() {stream.resume();};
+	this.listen(stream);
 	
 	return this;	
 };

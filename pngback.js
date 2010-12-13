@@ -112,6 +112,8 @@ png.read = function(stream) {
 	var forbidden = [];
 	var first = 'IHDR';
 	var emitted = [];
+	var get = this.get;
+	var accept = this.accept;
 	
 	function chunkend(ev, buf) { // this should be refactored to be generic, like get, as deals with state
 		if (ev == 'data') {
@@ -123,7 +125,7 @@ png.read = function(stream) {
 		}
 	}
 	
-	function chunkcrc(ev, buf) {return png.get(4, function(bytes) {
+	function chunkcrc(ev, buf) {return get(4, function(bytes) {
 			crc.finalize();
 			var c = to32(bytes);
 			if (c !== crc.crc) {
@@ -184,7 +186,7 @@ png.read = function(stream) {
 		return buf;
 	}
 
-	function chunktype(ev, buf) {return png.get(4, function(bytes) {
+	function chunktype(ev, buf) {return get(4, function(bytes) {
 			var b;
 			for (var i = 0; i < 4; i++) {
 				b = bytes[i];
@@ -221,7 +223,7 @@ png.read = function(stream) {
 			return chunkdata;
 		}, ev, buf);}
 
-	function chunklen(ev, buf) {return png.get(4, function(bytes) {
+	function chunklen(ev, buf) {return get(4, function(bytes) {
 			if (bytes[0] & 0x80) { // high bit must not be set
 				return 'bad chunk length';
 			}
@@ -230,7 +232,7 @@ png.read = function(stream) {
 			return chunktype;
 		}, ev, buf);}
 	
-	function sig(ev, buf) {return png.accept(png.signature, chunklen, ev, buf);}
+	function sig(ev, buf) {return accept(png.signature, chunklen, ev, buf);}
 	
 	this.listen(stream);
 	this.state = sig;

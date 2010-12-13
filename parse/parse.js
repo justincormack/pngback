@@ -33,6 +33,8 @@ parse.listen = function(stream) {
 	this.unlisten = unlisten;
 	this.pause = pause;
 	this.resume = resume;
+
+	return this;
 };
 
 parse.data = function(buf) {
@@ -53,16 +55,15 @@ parse.data = function(buf) {
 };
 	
 parse.end = function() {
-	if (typeof this.state == 'function') {
-		var ret = this.state('end');
+	var ret = this.state('end');
 			
-		if (typeof ret == 'string') {
-			this.emit('bad', ret);
-			this.state = null;
-		}
+	if (typeof ret == 'string') {
+		this.emit('bad', ret);
+		this.state = null;
+	}
 
-		this.unlisten();
-	} else {console.log("already ended: " + this.state);}
+	this.unlisten();
+
 	this.emit('end');
 };
 

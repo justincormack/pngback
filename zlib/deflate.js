@@ -112,13 +112,12 @@ deflate.read = function(stream) {
 		next(ev, buf);
 	}
 	
-	
 	state = gzip;
 	crc.start();
 	
 	stream.on('data', data);
 	stream.on('end', end);
-	
+        
 	this.pause = function() {stream.pause();};
 	this.resume = function() {stream.resume();};
 	
