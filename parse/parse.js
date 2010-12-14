@@ -44,13 +44,13 @@ parse.listen = function(stream) {
 // the current deflate functions here are simpler, could have both in different versions
 parse.data = function(buf) {
 	while (typeof this.state == 'function' && buf.length) {
-		var ret = this.state('data', buf);
+		var ret = this.state.call(this, 'data', buf);
 			
 		if (typeof ret == 'string') {
 			this.emit('bad', ret);
 			this.state = null;
 		}
-			
+		
 		buf = ret;
 	}
 		
@@ -60,11 +60,13 @@ parse.data = function(buf) {
 };
 	
 parse.end = function() {
-	var ret = this.state('end');
+	if (typeof this.state == 'function') { // can have non function eg if early error
+		var ret = this.state.call(this, 'end');
 			
-	if (typeof ret == 'string') {
-		this.emit('bad', ret);
-		this.state = null;
+		if (typeof ret == 'string') {
+			this.emit('bad', ret);
+			this.state = null;
+		}
 	}
 
 	this.unlisten();
@@ -98,13 +100,14 @@ parse.get = function(len, match, ev, buf, acc) {
 		return buf;
 	}
 
-	var ret = match(acc);
+	var ret = match.call(this, acc);
 	
 	if (typeof ret == 'string') {
 		return ret;
 	}
 		
 	this.state = ret;
+
 	return buf;
 };
 	

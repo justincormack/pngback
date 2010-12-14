@@ -111,8 +111,8 @@ png.read = function(stream) {
 	var forbidden = [];
 	var first = 'IHDR';
 	var emitted = [];
-	var get = this.get;
-	var accept = this.accept;
+	var get = function(len, match, ev, buf) {return png.get.call(png, len, match, ev, buf);};
+	var accept = function(bytes, success, ev, buf) {return png.accept.call(png, bytes, success, ev, buf);};
 	
 	function chunkend(ev, buf) { // this should be refactored to be generic, like get, as deals with state
 		if (ev == 'data') {
@@ -785,9 +785,6 @@ metadata.stream = function(stream, f) { // f is the callback
 	return this;
 };
 
-
-// are these the best names?
-(function(exports) {
 	exports.parse = cfsm;
 	exports.chunk = png;
 	exports.metadata = metadata;

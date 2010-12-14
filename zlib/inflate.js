@@ -98,7 +98,6 @@ var huff = {
 			console.log(i + "  " + nextcode[i]);	
 		}
 	
-		// not how we want to use the data?
 		var codes = [];
 		var len;
 		for (i = 0; i < bl.length; i++) {
@@ -114,6 +113,8 @@ var huff = {
 			console.log(i + " " + bl[i] + " " + binary(codes[i], bl[i]));
 		}
 
+		this.codes = codes; 		// not how we want to use the data? want indexed by length, prefix?
+
 	},
 
 
@@ -125,7 +126,7 @@ var inflate = Object.create(parse);
 
 inflate.read = function(stream) {
 	var z = this;
-	var get = this.get;
+	var get = function(len, match, ev, buf) {return z.get.call(z, len, match, ev, buf);};
 
 	function zerot(match, ev, buf) { // zero terminated string; we will need result to check crc
 		
@@ -194,7 +195,7 @@ inflate.read = function(stream) {
 					}
 
 					if (len !== nnlen) {
-						return 'uncompressed length does not match ones complement ' + len + " " + nlen;
+						return 'uncompressed length does not match ones complement ' + len + ' ' + nlen;
 					}
 					return udata;
 				}
@@ -327,7 +328,7 @@ inflate.read = function(stream) {
 			// var os = bytes[9]; // unused
 				
 			if (id1 !== 31 || id2 !== 139) {
-				return "not a gzip file";
+				return "not a gzip file " + bytes;
 			}
 		
 			if (cm !== 8) {
@@ -352,6 +353,9 @@ inflate.read = function(stream) {
 			if (fhcrc) {
 				return hcrc;
 			}
+
+			console.log("abaout to return compressed");
+
 			return compressed;
 		
 		}
@@ -359,7 +363,7 @@ inflate.read = function(stream) {
 		return get(10, gunzipMatch, ev, buf);
 	}
 	
-	state = gunzip;
+	this.state = gunzip;
 	
 	this.listen(stream);
 	
