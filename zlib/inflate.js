@@ -21,32 +21,53 @@ function top16(bytes) {
 	return 256 * bytes[3] + bytes[2];
 }
 
+// binary pretty print
+function binary(n, l) {
+	var d = false;
+	var s = '';
+	if (typeof l === 'undefined') {
+		l = 32;
+	} else {
+		d = true;
+	}
+	for (i = l - 1; i >= 0; i--) {
+		if (i === 0) {
+			d = true;
+		}
+		if ((n >>> i) & 1) {
+			d = true;
+			s += '1';
+		} else if (d) {
+			s += '0';
+		}
+	}
+	return s;
+}
+
 // Huffman coding functions
 
 var huff = {
-	repeat: function(x, c, a) {
-		if (typeof a == 'undefined') {
-			a = [];
-		}
+	repeat: function(x, c) {
+		var a = [];
 		for (var i = 0; i < c; i++) {
-				a.push(x);
-			}
+			a.push(x);
+		}
 		return a;
 	},
 	expand: function(a) {
 		var ret = [];
 		while (a.length) {
-			var h = a.pop();
-			this.repeat(h.bits, h.length, ret);
+			var h = a.shift();
+			ret = ret.concat(this.repeat(h.bits, h.length));
 		}
 		return ret;
 	},
 	type1: function() {
-		return expand([
-			{bits: 8, length: 144},
-			{bits: 9, length: 255 - 144},
-			{bits: 7, length: 279 - 256},
-			{bits: 8, length: 287 - 280}
+		return this.expand([
+			{bits: 8, length: 143 - 0 + 1},
+			{bits: 9, length: 255 - 144 + 1},
+			{bits: 7, length: 279 - 256 + 1},
+			{bits: 8, length: 287 - 280 + 1}
 		]);
 	},
 	init: function(bl) {
@@ -55,16 +76,44 @@ var huff = {
 		for (i = 0; i < bl.length; i++) {
 			max = (bl[i] > max) ? bl[i] : max;
 		}
-		var blcount = this.repeat(0, max + 1); // initialize with zeros
-		for (i = 0; i < bl.length; i++) {
+		blcount = this.repeat(0, max + 1); // initialize with zeros
+		for (i = 0; i < bl.length; i++) { // number of nodes in each code length
 			blcount[bl[i]]++;
 		}
+
+		console.log("blcount");
+		for (i = 1; i <= max; i++) {
+			console.log(i + "  " + blcount[i]);	
+		}
+
 		var code = 0;
 		var nextcode = [];
-		for (bits = 1; bits < max; bits++) {
-			code = (code + blcount[bits - 1]) << 1;
-			nextcode[bits] = code;
+		for (i = 1; i <= max; i++) { // smallest code for each length, in binary
+			code = (code + blcount[i - 1]) * 2;
+			nextcode[i] = code;
 		}
+
+		console.log("nextcode");
+		for (i = 1; i <= max; i++) {
+			console.log(i + "  " + nextcode[i]);	
+		}
+	
+		// not how we want to use the data?
+		var codes = [];
+		var len;
+		for (i = 0; i < bl.length; i++) {
+			len = bl[i];
+			if (len !== 0) {
+				codes[i] = nextcode[len];
+				nextcode[len]++;
+			}
+		}
+
+		console.log("symbol len code");
+		for (i = 0; i < bl.length; i++) {
+			console.log(i + " " + bl[i] + " " + binary(codes[i], bl[i]));
+		}
+
 	},
 
 
@@ -319,6 +368,7 @@ inflate.read = function(stream) {
 
 (function(exports) {
 	exports.inflate = inflate;
+	exports.huff = huff;
 })(
 
   typeof exports === 'object' ? exports : this
