@@ -218,7 +218,7 @@ parse.getb = function(len, match, ev, buf, acc, acclen) {
 			return buf;
 		}
 
-		ret = match(acc);
+		ret = match(acc, len);
 
 		if (typeof ret == 'string') {
 			return ret;

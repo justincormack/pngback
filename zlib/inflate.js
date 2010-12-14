@@ -70,6 +70,12 @@ var huff = {
 			{bits: 8, length: 287 - 280 + 1}
 		]);
 	},
+	// extra bits and lengths, offset by 257
+	exbits: [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0],
+	lens: [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258],
+	// extra bits for distances
+	eebits: [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13],
+	dists: [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577],
 	init: function(bl) {
 		var max = 0;
 		var min = 0;
@@ -83,10 +89,10 @@ var huff = {
 			blcount[bl[i]]++;
 		}
 
-		console.log("blcount");
+		/*console.log("blcount");
 		for (i = 1; i <= max; i++) {
 			console.log(i + "  " + blcount[i]);	
-		}
+		}*/
 
 		var code = 0;
 		var nextcode = [];
@@ -95,10 +101,10 @@ var huff = {
 			nextcode[i] = code;
 		}
 
-		console.log("nextcode");
+		/*console.log("nextcode");
 		for (i = 1; i <= max; i++) {
 			console.log(i + "  " + nextcode[i]);	
-		}
+		}*/
 	
 		var codes = [];
 		var len;
@@ -110,18 +116,30 @@ var huff = {
 			}
 		}
 
-		console.log("symbol len code");
+		/*console.log("symbol len code");
 		for (i = 0; i < bl.length; i++) {
 			console.log(i + " " + bl[i] + " " + binary(codes[i], bl[i]));
-		}
+		}*/
 
-		this.codes = codes; 		// not how we want to use the data? want indexed by length, prefix?
+		this.codes = codes; // not how we want to use the data? want indexed by length, prefix?
+		this.bl = bl;
 		this.shortest = min;
+		this.longest = max;
 	},
-
-
-
-
+	check: function(n, len) {
+		// stupidly inefficient, work out how we need to actually organize codes!!!
+		for (var i = 0; i < this.codes.length; i++) {
+			if (this.bl[i] == len) {
+				if (this.codes[i] == n) {
+					return i;
+				}
+			}
+		}
+		if (len == max) {
+			throw new Error("impossible!");
+		}
+		return -(len + 1); // actually can return next used code
+	}
 };
 
 var inflate = Object.create(parse);
@@ -149,12 +167,14 @@ inflate.read = function(stream) {
 	
 	function atend(ev) {
 		if (ev != 'end') {
-			return 'expected end of stream';
+			return 'expected the end of stream';
 		}
 		z.emit('end');
 		z.unlisten();
 	}
 	
+// it may be more performant to run the main decompress as a loop, without all the function calls, inline everything
+// at the moment it gets very indirect. that would mean bringing getb back here for this case
 	function uncompress(winSize, next, ev, buf) {
 		var bfinal = false;
 		
@@ -162,13 +182,85 @@ inflate.read = function(stream) {
 			return uncompress(winSize, next, ev, buf);
 		}
 		
+		// redo to share with user created tables. ie pass huf var to here
 		function standard(ev, buf) { // standard Huffman code
+			var ex, len, ee, dist;
+
+			function backref(dist, len) {
+				console.log("backref: " + dist + " " + len);
+			}
+
+			function eebits(ev, buf) {
+				function match(n) {
+					dist += n;
+					backref();
+					return standard;
+				}
+
+				return getb(ee, match, ev, buf);
+			}
+
+			function distance(ev, buf) {
+				function match(n) {
+					if (n > 29) {
+						return 'invalid distance';
+					}
+					ee = z.eebits[n];
+					dist = z.dist[n];
+					if (ee > 0) {
+						return eebits;
+					}
+					backref();
+					return standard;
+				}				
+
+				return getb(5, match, ev, buf);
+			}
+
+
+			function ebits(ev, buf) {
+				function match(n) {
+					len += n;
+					return distance;
+				}
+
+				return getb(ex, match, ev, buf);
+			}
+
+			function check(n, len) {
+				var ret = shuf.check(n, len);
+				
+				if (ret < 0) { // not enough bits, returns next length
+					return -ret;
+				}
+
+				if (ret === 256) { // end of block
+					return nextblock;
+				}
+				if (ret > 285) {
+					return 'invalid compressed data';
+				}
+
+				if (ret > 256) { // back reference
+					ex = z.exbits[ret - 257];
+					len = z.lens[ret - 257];
+					if (ex > 0) {
+						return ebits;
+					}
+					return distance;
+				}
+
+				// literal
+				console.log("literal: " + ret);
+				return standard;
+			}
+
 			if (typeof shuf == 'undefined') {
 				shuf = Object.create(huff);
 				shuf.init(shuf.type1());
 			}
 			
-
+			return getb(shuf.shortest, check, ev, buf);
 		}
 
 		function nocompress(ev, buf) {
@@ -242,6 +334,9 @@ inflate.read = function(stream) {
 			if (btype === 0) { // no compression
 				return nocompress;
 			}
+			if (btype === 1) { // standard table
+				return standard;
+			}
 			return 'code for type ' + btype + ' not written yet';
 		}
 		
@@ -252,9 +347,14 @@ inflate.read = function(stream) {
 		function nextblock(ev, buf) {
 			if (bfinal) {
 				z.state = next;
+				if (this.b !== 0) { // skip to next byte boundary
+					buf = buf.slice(1);
+					this.b = 0;
+				}
 				return buf;
 			}
-			return block(ev, buf);
+			z.state = block;
+			return buf;
 		}
 	
 		return block(ev, buf);
@@ -390,3 +490,4 @@ inflate.read = function(stream) {
 
   typeof exports === 'object' ? exports : this
 );
+
