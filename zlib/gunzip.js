@@ -7,8 +7,6 @@ function gunzip(stream, out) {
 	var g = Object.create(inflate);
 	
 	g.on('data', function(buf) {
-		console.log("data " + buf.length);
-/*
 		var written = out.write(buf);
 		if (! written) {
 			if (stream.readable) {
@@ -20,12 +18,11 @@ function gunzip(stream, out) {
 				}
 			});
 		}
-*/
 	});
 
-	g.on('end', function() {
+	/*g.on('end', function() {
 		console.log("end of stream");
-	});
+	});*/ // being called twice?
 
 	g.on('bad', function(msg) {
 		console.log(msg);

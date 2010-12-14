@@ -37,6 +37,7 @@ parse.listen = function(stream) {
 	this.unlisten = unlisten;
 	this.pause = pause;
 	this.resume = resume;
+	this.b = 0; // bit position, if used. Not that great having here.
 
 	return this;
 };
@@ -151,7 +152,8 @@ parse.accept = function accept(bytes, success, ev, buf) {
 
 // get bits
 parse.getb = function(len, match, ev, buf, acc, acclen) {
-			
+	var b = this.b;	
+
 	function again(ev, buf) {
 		return this.getb(len, match, ev, buf, acc, acclen);
 	}
@@ -205,6 +207,8 @@ parse.getb = function(len, match, ev, buf, acc, acclen) {
 	if (i > 0) {
 		buf = buf.slice(i);
 	}
+
+	this.b = b;
 
 	if (acclen < len) {
 		this.state = again;

@@ -127,6 +127,7 @@ var inflate = Object.create(parse);
 inflate.read = function(stream) {
 	var z = this;
 	var get = function(len, match, ev, buf) {return z.get.call(z, len, match, ev, buf);};
+	var getb = function(len, match, ev, buf) {return z.getb.call(z, len, match, ev, buf);};
 
 	function zerot(match, ev, buf) { // zero terminated string; we will need result to check crc
 		
@@ -152,7 +153,6 @@ inflate.read = function(stream) {
 	}
 	
 	function uncompress(winSize, next, ev, buf) {
-		var b = 0; // bit position
 		var bfinal = false;
 		
 		function again(ev, buf) {
@@ -164,7 +164,6 @@ inflate.read = function(stream) {
 			function lennlen(ev, buf) {
 				
 				function check(bytes) {
-										
 					var len = to16(bytes);
 					var nlen = top16(bytes);
 					var nnlen = (~nlen + 0x100000000) & 0xffff;
@@ -207,15 +206,19 @@ inflate.read = function(stream) {
 				if (ev != 'data') {
 					return 'unexpected end of stream';
 				}
-				if (b !== 0) { // skip to next byte boundary
+				if (buf.length === 0 && this.b !== 0) {
+					return [];
+				}
+				if (this.b !== 0) { // skip to next byte boundary
 					buf = buf.slice(1);
-					b = 0;
+					this.b = 0;
 				}
 				z.state = lennlen;
 				return buf;
 			}
 
-			return skip(ev, buf);
+			z.state = skip;
+			return buf;
 		}
 	
 		function header(bits) {
@@ -353,8 +356,6 @@ inflate.read = function(stream) {
 			if (fhcrc) {
 				return hcrc;
 			}
-
-			console.log("abaout to return compressed");
 
 			return compressed;
 		
