@@ -170,56 +170,64 @@ parse.getb = function(len, match, ev, buf, acc, acclen) {
 		acc = 0;
 		acclen = 0;
 	}
-			
-	var max = len - acclen;
-	var maxb = buf.length * 8 - b;
-	max = (max > maxb) ? maxb : max;
+	
+	var max, maxb, i, diff, bs, ret;
 
-	var i = 0;
-			
-	// first pull the bits out of the first possibly partial byte
-	var bs = (max < 8 - b) ? max : 8 - b;
-	acc |= ((buf[i] >>> b) & mask(bs)) << acclen;
-	acclen += bs;
-	b += bs;
+	do {
+		max = len - acclen;
+		maxb = buf.length * 8 - b;
+		max = (max > maxb) ? maxb : max;
 
-	if (b == 8) {
-		i++;
-		b = 0;
-	}
+		i = 0;
 			
-	// now get the whole bytes
-	while (bs - maxb > 8) {
-		acc |= buf[i++] << acclen; // needs sign correction after 31 bits
-		acclen += 8;
-		bs += 8;
-	}
+		// first pull the bits out of the first possibly partial byte
+		bs = (max < 8 - b) ? max : 8 - b;
+		acc |= ((buf[i] >>> b) & mask(bs)) << acclen;
+		acclen += bs;
+		b += bs;
+
+		if (b == 8) {
+			i++;
+			b = 0;
+		}
+			
+		// now get the whole bytes
+		while (bs - maxb > 8) {
+			acc |= buf[i++] << acclen; // needs sign correction after 31 bits
+			acclen += 8;
+			bs += 8;
+		}
 		
-	// now the remainder
-	var diff = bs - maxb;
-	if (diff > 0) {
-		acc |= (buf[i] & mask(diff)) << acclen;
-		acclen += diff;
-		bs += diff;
-		b += diff;
-	}
+		// now the remainder
+		diff = bs - maxb;
+		if (diff > 0) {
+			acc |= (buf[i] & mask(diff)) << acclen;
+			acclen += diff;
+			bs += diff;
+			b += diff;
+		}
 			
-	if (i > 0) {
-		buf = buf.slice(i);
-	}
+		if (i > 0) {
+			buf = buf.slice(i);
+		}
 
-	this.b = b;
+		this.b = b;
 
-	if (acclen < len) {
-		this.state = again;
-		return buf;
-	}
+		if (acclen < len) {
+			this.state = again;
+			return buf;
+		}
 
-	var ret = match(acc);
+		ret = match(acc);
 
-	if (typeof ret == 'string') {
-		return ret;
-	}
+		if (typeof ret == 'string') {
+			return ret;
+		}
+
+		if (typeof ret == 'number') { // need more bits
+			len = ret;
+		}
+	} while (typeof ret !== 'number');
 
 	this.state = ret;
 	return buf;

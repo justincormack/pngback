@@ -72,9 +72,11 @@ var huff = {
 	},
 	init: function(bl) {
 		var max = 0;
+		var min = 0;
 		var i = 0;
 		for (i = 0; i < bl.length; i++) {
 			max = (bl[i] > max) ? bl[i] : max;
+			min = (min === 0 || bl[i] < min) ? bl[i] : min;
 		}
 		blcount = this.repeat(0, max + 1); // initialize with zeros
 		for (i = 0; i < bl.length; i++) { // number of nodes in each code length
@@ -114,7 +116,7 @@ var huff = {
 		}
 
 		this.codes = codes; 		// not how we want to use the data? want indexed by length, prefix?
-
+		this.shortest = min;
 	},
 
 
@@ -128,6 +130,7 @@ inflate.read = function(stream) {
 	var z = this;
 	var get = function(len, match, ev, buf) {return z.get.call(z, len, match, ev, buf);};
 	var getb = function(len, match, ev, buf) {return z.getb.call(z, len, match, ev, buf);};
+	var shuf; // standard huffman code
 
 	function zerot(match, ev, buf) { // zero terminated string; we will need result to check crc
 		
@@ -159,6 +162,15 @@ inflate.read = function(stream) {
 			return uncompress(winSize, next, ev, buf);
 		}
 		
+		function standard(ev, buf) { // standard Huffman code
+			if (typeof shuf == 'undefined') {
+				shuf = Object.create(huff);
+				shuf.init(shuf.type1());
+			}
+			
+
+		}
+
 		function nocompress(ev, buf) {
 			
 			function lennlen(ev, buf) {
