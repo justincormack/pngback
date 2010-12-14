@@ -227,7 +227,7 @@ parse.getb = function(len, match, ev, buf, acc, acclen) {
 		if (typeof ret == 'number') { // need more bits
 			len = ret;
 		}
-	} while (typeof ret !== 'number');
+	} while (typeof ret == 'number');
 
 	this.state = ret;
 	return buf;
