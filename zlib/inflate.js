@@ -76,6 +76,8 @@ var huff = {
 	// extra bits for distances
 	eebits: [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13],
 	dists: [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577],
+	// codes for codelen
+	clorder: [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15],
 	init: function(bl) {
 		var max = 0;
 		var min = 0;
@@ -182,7 +184,41 @@ inflate.read = function(stream) {
 			return uncompress(winSize, next, ev, buf);
 		}
 		
-		// redo to share with user created tables. ie pass huf var to here
+		function custom(ev, buf) { // read custom Huffman codes
+			var hlit, hdist, hclen;
+			var c;
+			var cl = [];
+
+
+			function codelenalpha(ev, buf) {
+							
+
+				function match(n) {
+					
+// this all looks more like a code itself, would it be easier to do like that???
+					c--;
+					if (c === 0) {
+						// now hlit + 257 encoded values;
+						return ***;
+					}
+					return codelenalpha;
+				}
+
+				return getb(3, match, ev, buf);
+			}
+
+			function match(n) {
+				hlit = n & 31;
+				hdist = (n >>> 5) & 31;
+				hclen = (n >>> 10) & 15;
+				var c = hclen * 4;
+				return codelenalpha;
+			}
+
+			return getb(14, match, ev, buf);
+		}
+
+		// redo to share with user created tables. ie pass huf var to here, or use variable
 		function standard(ev, buf) { // standard Huffman code
 			var ex, len, ee, dist;
 
@@ -337,7 +373,7 @@ inflate.read = function(stream) {
 			if (btype === 1) { // standard table
 				return standard;
 			}
-			return 'code for type ' + btype + ' not written yet ';
+			return custom; // custom Huffman tables
 		}
 		
 		function block(ev, buf) {
