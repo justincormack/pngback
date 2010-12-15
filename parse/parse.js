@@ -158,8 +158,8 @@ parse.getb = function(len, match, ev, buf, acc, acclen) {
 		return this.getb(len, match, ev, buf, acc, acclen);
 	}
 			
-	function mask(b) {
-		return (1 << (b + 1)) - 1;
+	function mask(bs) {
+		return (1 << bs) - 1;
 	}
 			
 	if (ev != 'data') {
@@ -179,9 +179,11 @@ parse.getb = function(len, match, ev, buf, acc, acclen) {
 		max = (max > maxb) ? maxb : max;
 
 		i = 0;
-			
+
+		
 		// first pull the bits out of the first possibly partial byte
 		bs = (max < 8 - b) ? max : 8 - b;
+
 		acc |= ((buf[i] >>> b) & mask(bs)) << acclen;
 		acclen += bs;
 		b += bs;

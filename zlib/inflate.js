@@ -325,7 +325,7 @@ inflate.read = function(stream) {
 			return buf;
 		}
 	
-		function header(bits) {
+		function header(bits, len) {
 			bfinal = bits & 1;
 			btype = bits >>> 1;
 			if (btype == 3) {
@@ -337,7 +337,7 @@ inflate.read = function(stream) {
 			if (btype === 1) { // standard table
 				return standard;
 			}
-			return 'code for type ' + btype + ' not written yet';
+			return 'code for type ' + btype + ' not written yet ';
 		}
 		
 		function block(ev, buf) {
